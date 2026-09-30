@@ -27,7 +27,11 @@ def test_webhook_replay(db: Session, engine: Engine) -> None:
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM square_events") == 1
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
-    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
+    assert _notifications(engine) == [
+        ("owner", "sms", "logged"),
+        ("parent", "email", "logged"),
+        ("parent", "sms", "logged"),
+    ]
     body = client().get(f"/api/holds/{hold_id}").json()
     assert body["status"] == "booked"
     assert body["party"]["confirmation_code"]
@@ -42,7 +46,11 @@ def test_created_then_updated_for_same_payment_books_once(db: Session, engine: E
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM square_events") == 2
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
-    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
+    assert _notifications(engine) == [
+        ("owner", "sms", "logged"),
+        ("parent", "email", "logged"),
+        ("parent", "sms", "logged"),
+    ]
 
 
 def test_simultaneous_deliveries_book_once(db: Session, engine: Engine) -> None:
@@ -61,7 +69,11 @@ def test_simultaneous_deliveries_book_once(db: Session, engine: Engine) -> None:
     assert sorted(outcomes) == ["booked"] + ["duplicate"] * (len(event_ids) - 1)
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
-    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
+    assert _notifications(engine) == [
+        ("owner", "sms", "logged"),
+        ("parent", "email", "logged"),
+        ("parent", "sms", "logged"),
+    ]
 
 
 def test_second_different_payment_on_booked_order_is_flagged(db: Session, engine: Engine) -> None:

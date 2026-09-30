@@ -1,7 +1,11 @@
 import logging
+import smtplib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from email.message import EmailMessage
+from email.utils import make_msgid, parseaddr
+from typing import Any
 
 import httpx
 from sqlalchemy import select, text
@@ -17,6 +21,7 @@ from app.timeutil import format_clock, format_date, format_day, format_time
 TWILIO_URL = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 REQUEST_TIMEOUT_SECONDS = 5.0
 VENUE_DETAILS = "538 Main St, 2nd floor, entrance on Division St. Questions: (646) 203-8087."
+SMTP_SSL_PORT = 465
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +32,7 @@ class Message:
     channel: str
     recipient: str
     body: str
+    subject: str = ""
 
 
 def dollars(cents: int) -> str:
@@ -51,6 +57,49 @@ def parent_booked_sms(booking: Booking, confirmation_url: str) -> str:
         f"{booking.kids} kids. {dollars(booking.deposit_cents)} deposit received, "
         f"balance {dollars(booking.total_cents - booking.deposit_cents)} due day of party. {VENUE_DETAILS} "
         f"Details: {confirmation_url}"
+    )
+
+
+def itemized_lines(line_items: list[dict[str, Any]]) -> list[str]:
+    lines = []
+    for item in line_items:
+        quantity = item["quantity"]
+        label = f"{item['label']} x{quantity} ({dollars(item['unit_cents'])} each)" if quantity > 1 else item["label"]
+        lines.append(f"  {label}: {'Included' if item['included'] else dollars(item['amount_cents'])}")
+    return lines
+
+
+def parent_booked_email_subject(booking: Booking) -> str:
+    return f"You're booked: {PACKAGES[booking.package].label} party {format_day(booking.event_starts_at)}"
+
+
+def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
+    package = PACKAGES[booking.package]
+    return "\n".join(
+        [
+            f"Hi {booking.first_name},",
+            "",
+            f"You're booked! Your {package.label} party at Encore Esports is confirmed.",
+            "",
+            f"Confirmation code: {booking.confirmation_code}",
+            f"Confirmation page: {confirmation_url}",
+            "",
+            f"When: {format_day(booking.event_starts_at)} at {format_time(booking.event_starts_at)}",
+            f"Package: {package.label}, {booking.kids} kids",
+            "",
+            "Itemized total:",
+            *itemized_lines(booking.line_items),
+            f"  Total: {dollars(booking.total_cents)}",
+            f"  Deposit received: {dollars(booking.deposit_cents)}",
+            f"  Balance due day of party: {dollars(booking.total_cents - booking.deposit_cents)}",
+            "",
+            "Where: Encore Esports, 538 Main St, 2nd floor, entrance on Division St.",
+            "",
+            "Refunds: full refund if you cancel 7 or more days before your party.",
+            "",
+            "Questions? Call (646) 203-8087.",
+            "",
+        ]
     )
 
 
@@ -92,8 +141,11 @@ def messages_for(db: Session, settings: Settings, hold_id: uuid.UUID) -> tuple[i
     booking = db.scalar(select(Booking).where(Booking.hold_id == hold_id, Booking.cancelled_at.is_(None)))
     if booking is not None:
         link = f"{settings.frontend_origin}/confirm.html?code={booking.confirmation_code}"
-        parent = Message("parent", "sms", booking.phone, parent_booked_sms(booking, link))
-        return booking.id, [parent, *_owner_messages(settings, owner_booked_text(booking))]
+        parent_sms = Message("parent", "sms", booking.phone, parent_booked_sms(booking, link))
+        parent_email = Message(
+            "parent", "email", booking.email, parent_booked_email(booking, link), parent_booked_email_subject(booking)
+        )
+        return booking.id, [parent_sms, parent_email, *_owner_messages(settings, owner_booked_text(booking))]
     hold = db.get(Hold, hold_id)
     if hold is not None and hold.status == "paid_after_expiry":
         slot = db.get(Slot, hold.slot_id)
@@ -117,6 +169,27 @@ def _send_sms(settings: Settings, to: str, body: str) -> str:
         detail = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
         raise RuntimeError(f"Twilio {response.status_code} code={detail.get('code')}: {detail.get('message')}")
     return str(response.json().get("sid", ""))
+
+
+def smtp_client(settings: Settings) -> smtplib.SMTP:
+    if settings.smtp_port == SMTP_SSL_PORT:
+        return smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=REQUEST_TIMEOUT_SECONDS)
+    return smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=REQUEST_TIMEOUT_SECONDS)
+
+
+def _send_email(settings: Settings, to: str, subject: str, body: str) -> str:
+    message = EmailMessage()
+    message["From"] = settings.email_from
+    message["To"] = to
+    message["Subject"] = subject
+    message["Message-ID"] = make_msgid(domain=parseaddr(settings.email_from)[1].rpartition("@")[2] or None)
+    message.set_content(body)
+    with smtp_client(settings) as smtp:
+        if settings.smtp_port != SMTP_SSL_PORT:
+            smtp.starttls()
+        smtp.login(settings.smtp_username, settings.smtp_password)
+        smtp.send_message(message)
+    return str(message["Message-ID"])
 
 
 def _send_discord(settings: Settings, body: str) -> str:
@@ -165,6 +238,11 @@ def _deliver(settings: Settings, message: Message) -> tuple[str, str | None]:
     """Returns (status, provider message id)."""
     if message.channel == "discord":
         return "sent", _send_discord(settings, message.body)
+    if message.channel == "email":
+        if not settings.email_enabled:
+            log.info("Email not sent (SMTP not configured) to=%s subject=%s body=\n%s", message.recipient, message.subject, message.body)
+            return "logged", None
+        return "sent", _send_email(settings, message.recipient, message.subject, message.body)
     if not settings.twilio_enabled:
         log.info("SMS not sent (Twilio not configured) to=%s body=%s", message.recipient, message.body)
         return "logged", None

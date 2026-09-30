@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_engine
 from app.services.booking import handle_square_webhook
-from tests.conftest import FakeMessaging
+from tests.conftest import FakeMessaging, FakeSmtp
 from tests.helpers import (
     WEBHOOK_KEY,
     WEBHOOK_URL,
@@ -36,15 +36,25 @@ def twilio_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "twilio_from_number", "+15005550006")
 
 
-def test_tests_never_use_real_twilio() -> None:
+@pytest.fixture
+def smtp_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test.example")
+    monkeypatch.setattr(settings, "smtp_username", "mailer")
+    monkeypatch.setattr(settings, "smtp_password", "mail-secret")
+    monkeypatch.setattr(settings, "email_from", "Encore Esports <bookings@encore-test.example>")
+
+
+def test_tests_never_use_real_twilio_or_smtp() -> None:
     assert not get_settings().twilio_enabled
+    assert not get_settings().email_enabled
 
 
 def test_sms_templates_match_spec(db: Session, engine: Engine) -> None:
     hold_id, order_id = create_hold_via_api(db)
     deliver(payment_event(order_id))
     code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
-    owner, parent = _rows(engine)
+    owner, _, parent = _rows(engine)
     day = next_saturday(7)
     date_label = f"{day:%a}, {day:%b} {day.day}"
     assert parent["recipient"] == "+19145550001"
@@ -64,8 +74,10 @@ def test_sms_templates_match_spec(db: Session, engine: Engine) -> None:
 def test_twilio_send_is_recorded(db: Session, engine: Engine, messaging: FakeMessaging, twilio_on: None) -> None:
     _, order_id = create_hold_via_api(db)
     deliver(payment_event(order_id))
-    assert [row["status"] for row in _rows(engine)] == ["sent", "sent"]
-    assert all(str(row["provider_message_id"]).startswith("SM") for row in _rows(engine))
+    rows = {(row["audience"], row["channel"]): row for row in _rows(engine)}
+    assert rows[("parent", "sms")]["status"] == rows[("owner", "sms")]["status"] == "sent"
+    assert rows[("parent", "email")]["status"] == "logged"
+    assert str(rows[("parent", "sms")]["provider_message_id"]).startswith("SM")
     sent = messaging.requests[0]
     assert sent.url.path == "/2010-04-01/Accounts/ACtest/Messages.json"
     form = parse_qs(sent.content.decode())
@@ -81,7 +93,7 @@ def test_twilio_failure_never_fails_the_booking(db: Session, engine: Engine, mes
     assert response.json() == {"outcome": "booked"}
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM bookings")).scalar_one() == 1
-    rows = _rows(engine)
+    rows = [row for row in _rows(engine) if row["channel"] == "sms"]
     assert [row["status"] for row in rows] == ["failed", "failed"]
     assert "21608" in str(rows[0]["error"])
 
@@ -90,7 +102,11 @@ def test_network_error_never_fails_the_booking(db: Session, engine: Engine, mess
     _, order_id = create_hold_via_api(db)
     messaging.raise_error = RuntimeError("connection reset")
     assert deliver(payment_event(order_id)).json() == {"outcome": "booked"}
-    assert [row["status"] for row in _rows(engine)] == ["failed", "failed"]
+    assert [(row["channel"], row["status"]) for row in _rows(engine)] == [
+        ("sms", "failed"),
+        ("email", "logged"),
+        ("sms", "failed"),
+    ]
 
 
 def test_discord_owner_post(db: Session, engine: Engine, messaging: FakeMessaging, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,6 +117,7 @@ def test_discord_owner_post(db: Session, engine: Engine, messaging: FakeMessagin
     assert [(row["audience"], row["channel"], row["status"]) for row in rows] == [
         ("owner", "discord", "sent"),
         ("owner", "sms", "logged"),
+        ("parent", "email", "logged"),
         ("parent", "sms", "logged"),
     ]
     assert rows[0]["recipient"] == "discord", "the webhook URL is a secret and is never stored"
@@ -137,16 +154,16 @@ def test_redelivery_heals_a_crash_between_commit_and_send(db: Session, engine: E
     assert result.outcome == "booked"
     assert _rows(engine) == [], "process died before notifying"
     assert deliver(raw).json() == {"outcome": "duplicate"}
-    assert len(_rows(engine)) == 2
+    assert len(_rows(engine)) == 3
     deliver(raw)
-    assert len(_rows(engine)) == 2
+    assert len(_rows(engine)) == 3
 
 
 def test_no_owner_sms_without_owner_phone(db: Session, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "owner_phone", "")
     _, order_id = create_hold_via_api(db)
     deliver(payment_event(order_id))
-    assert [row["audience"] for row in _rows(engine)] == ["parent"]
+    assert [(row["audience"], row["channel"]) for row in _rows(engine)] == [("parent", "email"), ("parent", "sms")]
 
 
 def test_money_formatting() -> None:
@@ -158,3 +175,86 @@ def test_money_formatting() -> None:
     assert addons_summary({"tournament": 1, "pizza_pack": 2}) == "Tournament + Livestream, Pizza Pack x2"
 
 
+def _confirmed_email_setup(db: Session) -> tuple[str, str]:
+    hold_id, order_id = create_hold_via_api(db)
+    deliver(payment_event(order_id))
+    code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
+    return hold_id, code
+
+
+def test_email_body_has_everything_the_parent_needs(db: Session, engine: Engine) -> None:
+    _, code = _confirmed_email_setup(db)
+    (email,) = [row for row in _rows(engine) if row["channel"] == "email"]
+    day = next_saturday(7)
+    body = str(email["body"])
+    assert email["recipient"] == "parent1@example.com"
+    assert email["status"] == "logged"
+    assert email["sent_at"] is not None
+    assert email["provider_message_id"] is None
+    for expected in (
+        "Hi Pat,",
+        f"Confirmation code: {code}",
+        f"Confirmation page: http://testserver/confirm.html?code={code}",
+        f"When: {day:%a}, {day:%b} {day.day} at 10:00 AM",
+        "Package: Standard, 18 kids",
+        "  Standard package, up to 15 kids, 3 hours: $399",
+        "  Additional kids x3 ($35 each): $105",
+        "  Pizza Pack: $40",
+        "  Total: $544",
+        "  Deposit received: $100",
+        "  Balance due day of party: $444",
+        "538 Main St, 2nd floor, entrance on Division St.",
+        "full refund if you cancel 7 or more days before your party",
+        "(646) 203-8087",
+    ):
+        assert expected in body, expected
+
+
+def test_email_is_sent_over_smtp_when_configured(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
+    _confirmed_email_setup(db)
+    (email,) = [row for row in _rows(engine) if row["channel"] == "email"]
+    assert email["status"] == "sent"
+    assert str(email["provider_message_id"]).endswith("@encore-test.example>")
+    assert smtp.connections == [("smtp.test.example", 587)]
+    assert smtp.starttls_calls == 1
+    assert smtp.logins == [("mailer", "mail-secret")]
+    (message,) = smtp.messages
+    assert message["To"] == "parent1@example.com"
+    assert message["From"] == "Encore Esports <bookings@encore-test.example>"
+    day = next_saturday(7)
+    assert message["Subject"] == f"You're booked: Standard party {day:%a}, {day:%b} {day.day}"
+    assert message.get_content().strip() == str(email["body"]).strip()
+
+
+def test_smtp_failure_never_fails_the_booking(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
+    _, order_id = create_hold_via_api(db)
+    smtp.fail_with = ConnectionRefusedError("smtp down")
+    response = deliver(payment_event(order_id))
+    assert response.status_code == 200
+    assert response.json() == {"outcome": "booked"}
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM bookings")).scalar_one() == 1
+    email = next(row for row in _rows(engine) if row["channel"] == "email")
+    assert email["status"] == "failed"
+    assert "smtp down" in str(email["error"])
+    sms = [row for row in _rows(engine) if row["channel"] == "sms"]
+    assert [row["status"] for row in sms] == ["logged", "logged"], "a failed email does not stop the texts"
+
+
+def test_email_is_never_sent_twice(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
+    _, order_id = create_hold_via_api(db)
+    raw = payment_event(order_id, event_id="evt-email-once")
+    deliver(raw)
+    deliver(raw)
+    deliver(payment_event(order_id, event_id="evt-email-once-2", event_type="payment.created"))
+    assert len(smtp.messages) == 1
+    assert len([row for row in _rows(engine) if row["channel"] == "email"]) == 1
+
+
+def test_no_email_for_an_expired_hold_payment(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
+    hold_id, order_id = create_hold_via_api(db)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE holds SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": hold_id})
+    deliver(payment_event(order_id))
+    assert smtp.messages == []
+    assert all(row["channel"] != "email" for row in _rows(engine))

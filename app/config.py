@@ -31,10 +31,20 @@ class Settings(BaseSettings):
     twilio_from_number: str = ""
     owner_phone: str = ""
     discord_webhook_url: str = ""
+    # Parent confirmation email over SMTP. With any of these empty, the email is logged to the console instead.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    email_from: str = ""
 
     @property
     def twilio_enabled(self) -> bool:
         return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_from_number)
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host and self.smtp_username and self.smtp_password and self.email_from)
 
     @property
     def fake_square_enabled(self) -> bool:

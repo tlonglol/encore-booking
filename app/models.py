@@ -217,7 +217,7 @@ class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint("audience IN ('parent', 'owner')", name="notifications_audience_valid"),
-        CheckConstraint("channel IN ('sms', 'discord')", name="notifications_channel_valid"),
+        CheckConstraint("channel IN ('sms', 'discord', 'email')", name="notifications_channel_valid"),
         CheckConstraint(
             "status IN ('pending', 'sent', 'failed', 'logged')", name="notifications_status_valid"
         ),

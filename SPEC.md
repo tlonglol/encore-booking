@@ -1,7 +1,7 @@
 # Encore Party Booking, Demo v1 Spec
 
 ## Goal
-A parent picks a date that is verified open, sees a live price, and the slot is held exclusively for them. Paying the $100 deposit (his existing policy) instantly locks the date and sends a confirmation text, with zero human involvement. The date is guaranteed before any money moves. The owner gets a text the second it happens. Demoable on a phone, styled to match encoregaming.us.
+A parent picks a date that is verified open, sees a live price, and the slot is held exclusively for them. Paying the $100 deposit (his existing policy) instantly locks the date and sends a confirmation text and email, with zero human involvement. The date is guaranteed before any money moves. The owner gets a text the second it happens. Demoable on a phone, styled to match encoregaming.us.
 
 This is a standalone system on its own URL. It never touches the existing website or the owner's live Square account (sandbox only until he approves).
 
@@ -9,7 +9,7 @@ This is a standalone system on its own URL. It never touches the existing websit
 - Backend: FastAPI (Python 3.12). Local dev with uvicorn. Deploy target: AWS Lambda via Mangum behind a Function URL, provisioned with Terraform.
 - DB: Neon Postgres free tier for dev and prod. SQLAlchemy + Alembic migrations. Tests run against a local Postgres started with Docker Compose (`docker compose up -d db`), never SQLite: the constraints under test are Postgres behavior.
 - Payments: Square Sandbox, hosted Checkout (Payment Links) + Webhooks.
-- Notifications: Twilio trial SMS (delivers only to verified numbers), with a log-to-console fallback when Twilio env vars are absent. Optional Discord webhook for owner notifications if `DISCORD_WEBHOOK_URL` is set.
+- Notifications: Twilio trial SMS (delivers only to verified numbers), with a log-to-console fallback when Twilio env vars are absent. Parent confirmation email over SMTP (stdlib `smtplib`, any provider's SMTP relay), with the same log-to-console fallback when the SMTP env vars are absent. Optional Discord webhook for owner notifications if `DISCORD_WEBHOOK_URL` is set.
 - Frontend: static HTML + vanilla JS, mobile first, deployed to S3 + CloudFront. Dark theme matching the Encore site (near-black background, blue accents, condensed uppercase headings).
 - Local webhook development: ngrok with a static domain (free tier offers one) so the webhook URL does not change between runs.
 - CI: GitHub Actions runs the test suite on every push with a Postgres service container.
@@ -58,7 +58,8 @@ The live site's booking form also offers "Venue Buyout, custom quote (off-hours)
 - A slot is (date, start_time). Demo rule: one bookable slot per weekend day at 10:00 AM America/New_York, stored as timestamptz in UTC. Duration is display-only in v1. Weekday request dates have no slot row; a request stores its own date and preferred start time.
 - A generator materializes weekend slots for the next 8 weekends from a template. It is idempotent and runs lazily whenever availability is requested. Owner can block a date in admin. Blocking is refused (409) while the slot has an active hold or a live booking; otherwise a parent could pay into a blocked slot. Weekday dates cannot be blocked in v1; the owner simply declines their requests.
 - Availability covers every date from today through the last day of the 8th weekend. Slot states are computed, not stored: open, held (active unexpired hold exists), booked, blocked, past (inside the lead-time window), request (weekdays; weekends too when `WEEKEND_DEFAULT=request`).
-- The date grid shows five states: open (unmarked, selectable), held ("On hold, may free up in a few minutes", not selectable), booked ("Booked"), unavailable (blocked or inside the lead-time window; the API keeps blocked and past distinct because admin unblocks), and request. The grid re-fetches availability every 30 seconds and when the tab regains focus, so a lapsed hold flips back to open without a reload.
+- The date picker is a weekend-first list of the next 8 weekends (Saturday and Sunday cards grouped by weekend), each card showing the date, 10:00 AM, and the state as a word on the card, never by color alone: Open, On hold ("may free up in a few minutes"), Booked, Unavailable (blocked or inside the lead-time window; the API keeps blocked and past distinct because admin unblocks), and Request (weekends while `WEEKEND_DEFAULT=request`). Below the list, "Want a weekday? Tell us your date" opens a date field for weekday requests. The page re-fetches availability every 30 seconds and when the tab regains focus, so a lapsed hold flips back to open without a reload.
+- Tapping an open or requestable date opens a confirm sheet before anything is reserved: date, start time, duration for the chosen package, current total, deposit, balance due day of party, and one primary action ("Hold my date" for weekends, "Send request" for weekdays). Dismissing the sheet returns to the list with nothing reserved. The sheet only displays the current server quote; the server still prices at hold and request time.
 
 ## Booking flow (the money path)
 1. `GET /api/availability` returns the next 8 weekends with per-slot status.
@@ -76,11 +77,11 @@ The live site's booking form also offers "Venue Buyout, custom quote (off-hours)
 6. Confirmation page: static `confirm.html?hold={hold_id}`. It polls `GET /api/holds/{hold_id}` until the status leaves `pending_payment`. Statuses: `pending_payment`, `booked` (returns confirmation_code and booking details), `expired`, `cancelled` (admin cancel, or the payment link could not be created; show a plain "this hold was cancelled" message), `paid_after_expiry` (show: "We received your payment. This slot's hold had expired, so we'll call you within the hour to lock in your date."). The permanent confirmation is `confirm.html?code={confirmation_code}` backed by `GET /api/bookings/{code}`. Confirmation codes are random and unguessable; the endpoint returns only what the confirmation page needs.
    - The hold_id passes through Square's redirect and browser history, so a `booked` hold returns only: confirmation_code, first name, package, date, time, kids, total, and balance. Never phone, email, or notes. `GET /api/bookings/{code}` returns the same fields.
 
-Square sends its own payment receipt email; that covers the payment record. Our SMS covers the booking.
+Square sends its own payment receipt email; that covers the payment record. Our SMS and email cover the booking.
 
 ## Party requests (stage 1)
 Weekdays (and weekends while `WEEKEND_DEFAULT=request`) take requests instead of holds. A request is an inquiry: no hold, no payment, no slot is taken, and the owner replies personally.
-1. Tapping a request date opens a short form: package, kids, add-ons, preferred start time (9:00 AM to 8:00 PM), first name, last name, phone, email, notes.
+1. The parent fills in the same details as a hold (package, kids, add-ons, first name, last name, phone, email, notes), then taps a request date (or enters a weekday through "Want a weekday?"). The confirm sheet for a request date adds a preferred start time (9:00 AM to 8:00 PM) and its primary action is "Send request".
 2. `POST /api/requests` validates exactly like a hold (the pricing function prices the summary; phone normalized to E.164) and stores a `requests` row: date, preferred time, status (`new`; later statuses reserved for stage 2), a snapshot of package, kids, add-ons, line items, and total, contact fields, client IP, timestamps.
 3. The date must be a request date: weekday, or weekend while `WEEKEND_DEFAULT=request` and the date is not booked or blocked. Weekend dates while weekends are `open` are rejected with "book it online". Dates inside the lead-time window are rejected with the call-us message; dates more than a year out are rejected.
 4. After commit, the owner is notified by SMS and Discord (same rules and notifications table as booking notices, keyed by request id, best-effort, never blocking the response). The parent sees an on-page confirmation; no parent SMS in stage 1.
@@ -115,21 +116,22 @@ Weekdays (and weekends while `WEEKEND_DEFAULT=request`) take requests instead of
 - Owner SMS: "NEW PARTY: {package} {date} {time}, {kids} kids, {addons}. Deposit paid. {parent name} {phone}."
 - Owner Discord webhook (optional): same content as the owner SMS, posted if `DISCORD_WEBHOOK_URL` is set. Free and permanent, unlike SMS.
 - Owner request SMS (and Discord): "PARTY REQUEST: {package} {date} at {preferred time}, {kids} kids, {addons}. Total ${x}. {parent name} {phone} {email}." Notes stay in admin, not in the SMS.
+- Parent email (channel `email`, same after-commit timing and the same one-claim-per-(booking, audience, channel) rule as the SMS): subject "You're booked: {Package} party {date}". Body: confirmation code and the permanent `confirm.html?code={confirmation_code}` link, date and time, package and kids, itemized total (from the booking's line items), the $100 deposit received, balance due day of party, "538 Main St, 2nd floor, entrance on Division St", the 7-day full-refund window, and (646) 203-8087. When SMTP credentials (`SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM`) are not all set, the body is logged to the console and the row is marked `logged`, exactly like the SMS fallback.
 - Every send attempt is written to a notifications table (channel, recipient, body, status, error, sent_at).
 - Twilio trial only delivers to verified numbers and prefixes messages with a trial notice: verify Tyler's number now, the owner's before demo day. If Twilio env vars are missing, log the message body instead so tests and dev never depend on Twilio.
 
 ## Non-goals for demo v1
-Refund automation, balance collection, chatbot, Start.gg sync, memberships, email notifications, coupon codes, editing a confirmed booking, multi-slot days, staff accounts, calendar sync, venue buyout lead form (the existing site form already handles it), package upgrade suggestions.
+Refund automation, balance collection, chatbot, Start.gg sync, memberships, owner and request email (email is parent booking confirmation only), coupon codes, editing a confirmed booking, multi-slot days, staff accounts, calendar sync, venue buyout lead form (the existing site form already handles it), package upgrade suggestions.
 
 ## Demo script
 On a phone, in under 3 minutes:
 1. Pick Standard, set 18 kids, add a Pizza Pack: total updates live to $544 (399 + 3x35 + 40). Balance shown as $444 after deposit.
-2. Pick an open Saturday, hold starts, 15:00 countdown visible.
+2. Fill in your details, tap an open Saturday card, review the confirm sheet, tap Hold my date; the 15:00 countdown starts.
 3. Pay with Square test card, land on the confirmation page, which flips from "confirming your payment" to booked within seconds.
-4. Confirmation SMS arrives on the phone; owner SMS (and Discord post, if configured) arrives on the second phone.
+4. Confirmation SMS (and email) arrives on the phone; owner SMS (and Discord post, if configured) arrives on the second phone.
 5. Second phone tries to book the same Saturday: sees it held/booked and gets offered the next open slot.
 6. Admin page already shows the booking.
-7. Tap a weekday: the request form appears, send it, the owner phone gets the priced request text, and admin shows the request.
+7. Tap "Want a weekday?", enter a date, review the confirm sheet, tap Send request; the owner phone gets the priced request text, and admin shows the request.
 
 ## Required tests
 1. `test_concurrent_holds`: N parallel hold requests for one slot (real parallel Postgres connections) yield exactly one success and N-1 conflicts. Each request uses a distinct phone, email, and client IP so the hold caps (429) cannot mask the slot conflict (409).
@@ -154,3 +156,4 @@ On a phone, in under 3 minutes:
 - Requests stage 2: the owner SMS/Discord carries approve and decline links, each a single-use token; the link opens a page whose button POSTs the action (never acted on GET); approve creates a 24-hour hold and texts the parent the checkout link; decline texts a polite no with open alternatives.
 - A weekly nudge to the owner summarizing `new` requests not yet acted on.
 - Pay-to-request (optional): the parent pays the deposit up front to submit a request, with an automatic Square refund if the request is declined or expires unanswered.
+- Pay in full as an alternative to the $100 deposit. Requires automated Square refunds first: the 7-day full-refund rule is applied by hand today, which is tolerable for $100 and not for a full balance.

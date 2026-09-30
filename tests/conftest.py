@@ -1,6 +1,7 @@
 import json
 import os
 from collections.abc import Iterator
+from email.message import EmailMessage
 from urllib.parse import urlsplit
 
 import httpx
@@ -45,6 +46,10 @@ TEST_ENV = {
     "TWILIO_FROM_NUMBER": "",
     "OWNER_PHONE": "+19145559999",
     "DISCORD_WEBHOOK_URL": "",
+    "SMTP_HOST": "",
+    "SMTP_USERNAME": "",
+    "SMTP_PASSWORD": "",
+    "EMAIL_FROM": "",
 }
 os.environ.update(TEST_ENV)
 
@@ -154,4 +159,48 @@ class FakeMessaging:
 def messaging(monkeypatch: pytest.MonkeyPatch) -> FakeMessaging:
     fake = FakeMessaging()
     monkeypatch.setattr(notifications, "http_client", lambda: httpx.Client(transport=httpx.MockTransport(fake.handle)))
+    return fake
+
+
+class FakeSmtp:
+    """Stands in for an SMTP server. Records every message; never touches the network."""
+
+    def __init__(self) -> None:
+        self.messages: list[EmailMessage] = []
+        self.logins: list[tuple[str, str]] = []
+        self.starttls_calls = 0
+        self.connections: list[tuple[str, int]] = []
+        self.fail_with: Exception | None = None
+
+    def client(self, settings: object) -> "FakeSmtpConnection":
+        return FakeSmtpConnection(self, getattr(settings, "smtp_host"), getattr(settings, "smtp_port"))
+
+
+class FakeSmtpConnection:
+    def __init__(self, server: FakeSmtp, host: str, port: int) -> None:
+        self.server = server
+        server.connections.append((host, port))
+
+    def __enter__(self) -> "FakeSmtpConnection":
+        if self.server.fail_with:
+            raise self.server.fail_with
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def starttls(self) -> None:
+        self.server.starttls_calls += 1
+
+    def login(self, username: str, password: str) -> None:
+        self.server.logins.append((username, password))
+
+    def send_message(self, message: EmailMessage) -> None:
+        self.server.messages.append(message)
+
+
+@pytest.fixture(autouse=True)
+def smtp(monkeypatch: pytest.MonkeyPatch) -> FakeSmtp:
+    fake = FakeSmtp()
+    monkeypatch.setattr(notifications, "smtp_client", fake.client)
     return fake

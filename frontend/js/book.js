@@ -19,7 +19,7 @@
       drinks_pack: ["🥤", "Soda + juice boxes for the whole group."],
     },
   };
-  const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "Request only" };
+  const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "By request" };
 
   const state = {
     catalog: null,
@@ -28,8 +28,13 @@
     addons: {},
     days: [],
     weekendDefault: "open",
-    selectedDate: null,
+    today: null,
+    firstBookable: null,
+    sheetDay: null,
+    busy: false,
     quote: null,
+    quoteFresh: false,
+    quoteError: null,
     quoteSeq: 0,
     hold: null,
     timer: null,
@@ -209,6 +214,9 @@
   // ---------- Quote ----------
   let quoteDelay = null;
   function requestQuote() {
+    state.quoteFresh = false;
+    state.quoteError = null;
+    renderSheet();
     $("quote-total").classList.add("stale");
     clearTimeout(quoteDelay);
     quoteDelay = setTimeout(fetchQuote, 120);
@@ -222,12 +230,15 @@
     });
     if (seq !== state.quoteSeq || state.hold) return;
     if (status !== 200) {
-      renderQuote(null, detailText(data, "Couldn't price that. Try again."));
+      state.quoteError = detailText(data, "Couldn't price that. Try again.");
+      renderQuote(null, state.quoteError);
+      renderSheet();
       return;
     }
     state.quote = data;
+    state.quoteFresh = true;
     renderQuote(data);
-    renderSummary();
+    renderSheet();
   }
 
   function renderQuote(quote, error) {
@@ -258,15 +269,20 @@
     );
   }
 
-  // ---------- Calendar ----------
-  const DOW_HEAD = ["M", "T", "W", "T", "F", "S", "S"];
-
-  function selectedDay() {
-    return state.days.find((d) => d.date === state.selectedDate) || null;
-  }
+  // ---------- Weekend list ----------
+  const DAY_MS = 86400000;
 
   function jsDate(day) {
     return new Date(day.date + "T12:00:00");
+  }
+
+  function isWeekendDay(day) {
+    const dow = jsDate(day).getDay();
+    return dow === 0 || dow === 6;
+  }
+
+  function dayLabel(date) {
+    return new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
   async function loadCalendar() {
@@ -277,62 +293,68 @@
     }
     state.days = data.days;
     state.weekendDefault = data.weekend_default;
-    const day = selectedDay();
-    if (state.selectedDate && (!day || (day.status !== "open" && day.status !== "request"))) {
-      state.selectedDate = null;
-      if (day) showSlotNotice(`${day.day_label} just became unavailable. Pick another date.`, nextOpenAfter(day), true);
+    state.today = data.today;
+    state.firstBookable = data.first_bookable_date;
+    $("weekday-date").min = data.first_bookable_date;
+    const open = state.sheetDay;
+    const fresh = open && state.days.find((d) => d.date === open.date);
+    if (fresh && fresh.status !== "open" && fresh.status !== "request" && !state.busy) {
+      closeSheet();
+      showSlotNotice(`${fresh.day_label} just became unavailable. Pick another date.`, nextOpenAfter(fresh), true);
     }
-    renderLegend();
     renderCalendar();
-    renderSummary();
   }
 
-  function renderLegend() {
-    const entries = [["open", "Open"], ["held", "On hold"], ["booked", "Booked"], ["blocked", "Unavailable"]];
-    entries.push(["request", state.weekendDefault === "request" ? "Request only" : "Weekdays: request only"]);
-    $("cal-legend").replaceChildren(
-      ...entries.map(([key, label]) => el("span", {}, [el("span", { class: `dot ${key}`, "aria-hidden": "true" }), label]))
-    );
+  function weekendGroups() {
+    const groups = [];
+    state.days.filter(isWeekendDay).forEach((day) => {
+      const last = groups[groups.length - 1];
+      if (jsDate(day).getDay() === 0 && last && last[last.length - 1].date === shiftDate(day.date, -1)) last.push(day);
+      else groups.push([day]);
+    });
+    return groups;
+  }
+
+  function shiftDate(date, days) {
+    return new Date(new Date(date + "T12:00:00").getTime() + days * DAY_MS).toISOString().slice(0, 10);
+  }
+
+  function weekendLabel(group) {
+    const first = group[0];
+    const saturday = jsDate(first).getDay() === 0 ? shiftDate(first.date, -1) : first.date;
+    return `Weekend of ${new Date(saturday + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
   }
 
   function renderCalendar() {
-    const months = new Map();
-    state.days.forEach((day) => {
-      const key = day.date.slice(0, 7);
-      if (!months.has(key)) months.set(key, []);
-      months.get(key).push(day);
-    });
-    const sections = [];
-    months.forEach((days) => {
-      const first = jsDate(days[0]);
-      const cells = [];
-      for (let pad = (first.getDay() + 6) % 7; pad > 0; pad--) cells.push(el("div", { class: "cal-day cal-pad" }));
-      days.forEach((day) => {
-        const selected = day.date === state.selectedDate;
-        const label = selected ? "Selected" : STATUS_TEXT[day.status];
-        cells.push(
+    $("slots").replaceChildren(
+      ...weekendGroups().map((group) =>
+        el("div", { class: "wk-group" }, [
+          el("div", { class: "wk-label", text: weekendLabel(group) }),
           el(
-            "button",
-            {
-              type: "button",
-              class: `cal-day ${day.status}` + (selected ? " selected" : ""),
-              "aria-pressed": String(selected),
-              "aria-label": `${day.day_label}${day.time_label ? ` ${day.time_label}` : ""}, ${label}`,
-              onclick: () => pickDate(day),
-            },
-            [String(jsDate(day).getDate()), el("span", { class: `dot ${day.status}`, "aria-hidden": "true" })]
-          )
-        );
-      });
-      sections.push(
-        el("div", { class: "cal-month" }, [
-          el("div", { class: "cal-month-label", text: first.toLocaleDateString("en-US", { month: "long", year: "numeric" }) }),
-          el("div", { class: "cal-head", "aria-hidden": "true" }, DOW_HEAD.map((d) => el("span", { text: d }))),
-          el("div", { class: "cal-grid" }, cells),
+            "div",
+            { class: "wk-cards" },
+            group.map((day) => {
+              const time = day.time_label || "10:00 AM";
+              return el(
+                "button",
+                {
+                  type: "button",
+                  class: `wk-card ${day.status}`,
+                  "aria-label": `${day.day_label} ${time}, ${STATUS_TEXT[day.status]}`,
+                  onclick: () => pickDate(day),
+                },
+                [
+                  el("span", { class: "wk-date", text: day.day_label }),
+                  el("span", { class: "wk-time", text: time }),
+                  el("span", { class: "wk-state" }, [el("span", { text: STATUS_TEXT[day.status] })]),
+                  day.status === "held" ? el("span", { class: "wk-hint", text: "May free up in a few minutes" }) : null,
+                ]
+              );
+            })
+          ),
         ])
-      );
-    });
-    $("slots").replaceChildren(...sections);
+      )
+    );
   }
 
   function nextOpenAfter(day) {
@@ -365,11 +387,8 @@
   function pickDate(day) {
     const current = state.days.find((d) => d.date === day.date) || day;
     if (current.status === "open" || current.status === "request") {
-      state.selectedDate = current.date;
       showSlotNotice(null);
-      renderCalendar();
-      renderSummary();
-      $("details-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      openSheet(current);
       return;
     }
     const alts = nextOpenAfter(current);
@@ -383,37 +402,97 @@
     }
   }
 
-  function requestMode() {
-    const day = selectedDay();
-    return Boolean(day && day.status === "request");
+  // ---------- Weekday request form ----------
+  function weekdayError(message) {
+    $("weekday-error").textContent = message || "";
   }
 
-  function renderSummary() {
-    const day = selectedDay();
-    const requesting = requestMode();
-    $("hold-button").disabled = !day || !state.quote;
-    $("time-field").hidden = !requesting;
-    $("fine-hold").hidden = requesting;
-    $("fine-request").hidden = !requesting;
-    $("book-title").textContent = requesting ? "Request this date" : "Hold your date";
-    $("book-sub").textContent = requesting
-      ? "Weekday parties are by request. Send it and we'll text you back to confirm — no payment now."
-      : "Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time.";
-    $("hold-button").textContent = requesting ? "Send request" : "Hold my date";
-    const line = $("summary-line");
-    if (!day) {
-      line.textContent = "Pick a date above";
+  function submitWeekday(event) {
+    event.preventDefault();
+    weekdayError(null);
+    const date = $("weekday-date").value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      weekdayError("Pick the date you have in mind.");
       return;
     }
-    line.replaceChildren(
-      requesting ? "Request · " : "",
-      el("b", { text: `${pkg(state.packageKey).label} · ${day.day_label}${day.time_label ? ` ${day.time_label}` : ""}` }),
-      ` · ${state.kids} kids · `,
-      el("b", { text: state.quote ? money(state.quote.total_cents) : "…" })
-    );
+    if (date < state.firstBookable) {
+      weekdayError("That's too soon to book online. Call (646) 203-8087 and we'll see what we can do.");
+      return;
+    }
+    if (date > shiftDate(state.today, 366)) {
+      weekdayError("That's more than a year out. Check the year, or call (646) 203-8087.");
+      return;
+    }
+    const listed = state.days.find((d) => d.date === date);
+    if (listed) {
+      pickDate(listed);
+      return;
+    }
+    if (isWeekendDay({ date }) && state.weekendDefault === "open") {
+      weekdayError("Weekends are booked online for the next 8 weekends. For a later weekend, call (646) 203-8087.");
+      return;
+    }
+    openSheet({ date, day_label: dayLabel(date), status: "request", slot_id: null, time_label: null });
   }
 
-  // ---------- Hold ----------
+  // ---------- Confirm sheet ----------
+  function requestMode() {
+    return Boolean(state.sheetDay && state.sheetDay.status === "request");
+  }
+
+  function sheetRow(label, value, className) {
+    return [el("dt", { text: label }), el("dd", { class: className || "", text: value })];
+  }
+
+  function renderSheet() {
+    const day = state.sheetDay;
+    if (!day) return;
+    const requesting = requestMode();
+    const quote = state.quoteFresh ? state.quote : null;
+    const p = pkg(state.packageKey);
+    $("sheet-eyebrow").textContent = requesting ? "Confirm your request" : "Confirm your date";
+    $("sheet-title").textContent = jsDate(day).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    $("sheet-time-field").hidden = !requesting;
+    const rows = [];
+    if (!requesting) rows.push(...sheetRow("Time", day.time_label || "10:00 AM"));
+    rows.push(...sheetRow("Package", `${p.label} · ${state.kids} kids`));
+    if (quote) {
+      rows.push(...sheetRow("Duration", `${quote.hours} hours`));
+      rows.push(...sheetRow("Total", money(quote.total_cents), "money"));
+      rows.push(...sheetRow(requesting ? "Deposit, after we confirm" : "Deposit due now", money(quote.deposit_cents), "money strong"));
+      rows.push(...sheetRow("Balance due day of party", money(quote.balance_cents), "money"));
+    } else {
+      rows.push(...sheetRow("Total", state.quoteError || "Updating…", "stale"));
+    }
+    $("sheet-rows").replaceChildren(...rows);
+    $("sheet-note").textContent = requesting
+      ? "No payment now, and nothing is booked until we confirm with you. We'll text you back. Questions: (646) 203-8087."
+      : "Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time. Full refund with 7+ days notice.";
+    $("sheet-confirm").textContent = requesting ? "Send request" : "Hold my date";
+    $("sheet-confirm").disabled = !quote || state.busy;
+    $("sheet-dismiss").disabled = state.busy;
+  }
+
+  function openSheet(day) {
+    state.sheetDay = day;
+    state.busy = false;
+    sheetError(null);
+    $("preferred_time").value = isWeekendDay(day) ? "10:00" : "16:00";
+    renderSheet();
+    if (!$("sheet").open) $("sheet").showModal();
+  }
+
+  function closeSheet() {
+    if ($("sheet").open) $("sheet").close();
+    state.sheetDay = null;
+    state.busy = false;
+  }
+
+  function sheetError(message) {
+    $("sheet-error").replaceChildren(message ? el("p", { class: "notice error sheet-error-text", text: message }) : "");
+  }
+
+  // ---------- Hold and request ----------
   function formError(message) {
     $("form-error").replaceChildren(message ? el("p", { class: "notice error", text: message }) : "");
   }
@@ -422,66 +501,75 @@
     return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
 
-  async function submitHold(event) {
-    event.preventDefault();
-    formError(null);
-    const form = event.target;
-    const day = selectedDay();
-    if (!day) {
-      formError("Pick a date first.");
-      return;
-    }
-    const values = Object.fromEntries(new FormData(form).entries());
+  function readDetails() {
+    const values = Object.fromEntries(new FormData($("details-form")).entries());
     const missing = ["first_name", "last_name", "phone", "email"].filter((k) => !String(values[k] || "").trim());
+    return { values, missing };
+  }
+
+  async function confirmSheet() {
+    const day = state.sheetDay;
+    if (!day || state.busy) return;
+    sheetError(null);
+    formError(null);
+    const { values, missing } = readDetails();
     if (missing.length) {
-      formError("Please fill in your name, phone, and email.");
-      form.elements[missing[0]].focus();
+      closeSheet();
+      formError("Please fill in your name, phone, and email, then pick your date again.");
+      $("details-form").elements[missing[0]].focus();
+      $("details-panel").scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    const button = $("hold-button");
-    button.disabled = true;
-    if (requestMode()) {
-      button.textContent = "Sending…";
-      await submitRequest(day, values, button);
-      return;
+    state.busy = true;
+    renderSheet();
+    $("sheet-confirm").textContent = requestMode() ? "Sending…" : "Holding your date…";
+    if (requestMode()) await submitRequest(day, values);
+    else await submitHold(day, values);
+    if (state.sheetDay) {
+      state.busy = false;
+      renderSheet();
     }
-    button.textContent = "Holding your date…";
+  }
+
+  function contact(values) {
+    return {
+      first_name: values.first_name.trim(),
+      last_name: values.last_name.trim(),
+      phone: values.phone.trim(),
+      email: values.email.trim(),
+      notes: String(values.notes || "").trim() || null,
+    };
+  }
+
+  async function submitHold(day, values) {
     const { status, data } = await api("/api/holds", {
       method: "POST",
-      body: {
-        slot_id: day.slot_id,
-        package: state.packageKey,
-        kids: state.kids,
-        addons: state.addons,
-        first_name: values.first_name.trim(),
-        last_name: values.last_name.trim(),
-        phone: values.phone.trim(),
-        email: values.email.trim(),
-        notes: String(values.notes || "").trim() || null,
-      },
+      body: { slot_id: day.slot_id, package: state.packageKey, kids: state.kids, addons: state.addons, ...contact(values) },
     });
-    button.textContent = "Hold my date";
     if (status === 201) {
+      closeSheet();
       startHold({ id: data.hold_id, checkoutUrl: data.checkout_url, deadline: Date.now() + data.seconds_remaining * 1000 });
       return;
     }
-    button.disabled = false;
     if (status === 409) {
-      state.selectedDate = null;
+      closeSheet();
       await loadCalendar();
       const alts = data.alternatives || [];
       showSlotNotice(`Sorry, ${day.day_label} was just taken. ${alts.length ? "These are still open:" : "No other dates are open right now."}`, alts, true);
       return;
     }
     if (status === 429 && data && data.expires_at) {
-      formError(`${detailText(data)} It's held until ${localTime(data.expires_at)}. Finish that checkout, or try again after it expires.`);
+      sheetError(`${detailText(data)} It's held until ${localTime(data.expires_at)}. Finish that checkout, or try again after it expires.`);
       return;
     }
-    if (status === 422 || status === 404) await loadCalendar();
-    formError(detailText(data));
+    if (status === 422 || status === 404) {
+      state.busy = false;
+      await loadCalendar();
+    }
+    if (state.sheetDay) sheetError(detailText(data));
   }
 
-  async function submitRequest(day, values, button) {
+  async function submitRequest(day, values) {
     const { status, data } = await api("/api/requests", {
       method: "POST",
       body: {
@@ -490,17 +578,12 @@
         package: state.packageKey,
         kids: state.kids,
         addons: state.addons,
-        first_name: values.first_name.trim(),
-        last_name: values.last_name.trim(),
-        phone: values.phone.trim(),
-        email: values.email.trim(),
-        notes: String(values.notes || "").trim() || null,
+        ...contact(values),
       },
     });
-    button.textContent = "Send request";
     if (status === 201) {
+      closeSheet();
       $("builder").hidden = true;
-      $("details-panel").hidden = true;
       $("request-done").hidden = false;
       $("request-summary").replaceChildren(
         el("b", { text: `${data.package_label} · ${data.day_label} at ${data.time_label}` }),
@@ -510,16 +593,17 @@
       $("request-done").scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    button.disabled = false;
-    if (status === 422) await loadCalendar();
-    formError(detailText(data));
+    if (status === 422) {
+      state.busy = false;
+      await loadCalendar();
+    }
+    if (state.sheetDay) sheetError(detailText(data));
   }
 
   async function startHold(hold) {
     state.hold = hold;
     store(HOLD_KEY, hold);
     $("builder").hidden = true;
-    $("details-panel").hidden = true;
     $("hold-panel").hidden = false;
     $("pay-button").href = hold.checkoutUrl || "#";
     $("hold-panel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -582,7 +666,27 @@
     });
     $("kids-minus").addEventListener("click", () => changeKids(-1));
     $("kids-plus").addEventListener("click", () => changeKids(1));
-    $("hold-form").addEventListener("submit", submitHold);
+    $("details-form").addEventListener("submit", (event) => event.preventDefault());
+    $("weekday-form").addEventListener("submit", submitWeekday);
+    $("weekday-toggle").addEventListener("click", () => {
+      const form = $("weekday-form");
+      form.hidden = !form.hidden;
+      $("weekday-toggle").setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) $("weekday-date").focus();
+    });
+    const sheet = $("sheet");
+    $("sheet-confirm").addEventListener("click", confirmSheet);
+    $("sheet-dismiss").addEventListener("click", closeSheet);
+    $("preferred_time").addEventListener("change", renderSheet);
+    sheet.addEventListener("cancel", (event) => {
+      if (state.busy) event.preventDefault();
+    });
+    sheet.addEventListener("click", (event) => {
+      if (event.target === sheet && !state.busy) closeSheet();
+    });
+    sheet.addEventListener("close", () => {
+      state.sheetDay = null;
+    });
 
     const { status, data } = await api("/api/catalog");
     if (status !== 200) {
