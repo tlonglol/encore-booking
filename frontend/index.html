@@ -41,7 +41,7 @@
       <div class="kids-row">
         <div class="stepper" role="group" aria-label="Number of kids">
           <button type="button" id="kids-minus" aria-label="One fewer kid">−</button>
-          <output id="kids-count" aria-live="polite">15</output>
+          <input id="kids-count" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" maxlength="2" aria-label="Number of kids" value="15">
           <button type="button" id="kids-plus" aria-label="One more kid">+</button>
         </div>
         <p class="kids-note" id="kids-note"></p>

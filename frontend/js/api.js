@@ -93,5 +93,43 @@
     }
   }
 
-  window.Encore = { api: api, detailText: detailText, money: money, clock: clock, el: el, store: store, recall: recall };
+  // Parses what's typed into a count field. null means "empty, still typing": the caller keeps the old value.
+  // Anything that isn't all digits falls back to the previous value; digits are clamped to [min, max].
+  function readCount(raw, previous, min, max) {
+    const text = String(raw).trim();
+    if (text === "") return null;
+    if (!/^[0-9]+$/.test(text)) return previous;
+    return Math.min(max, Math.max(min, parseInt(text, 10)));
+  }
+
+  // Wires a typed count input: updates on every keystroke (like a +/- tap) and settles on blur.
+  function bindCount(input, min, max, get, set) {
+    input.addEventListener("input", function () {
+      const value = readCount(input.value, get(), min, max);
+      if (value === null) return;
+      if (input.value !== String(value)) input.value = String(value);
+      if (value !== get()) set(value);
+    });
+    input.addEventListener("blur", function () {
+      const value = readCount(input.value, get(), min, max);
+      const settled = value === null ? get() : value;
+      input.value = String(settled);
+      if (settled !== get()) set(settled);
+    });
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") input.blur();
+    });
+  }
+
+  window.Encore = {
+    api: api,
+    detailText: detailText,
+    money: money,
+    clock: clock,
+    el: el,
+    store: store,
+    recall: recall,
+    readCount: readCount,
+    bindCount: bindCount,
+  };
 })();

@@ -1,5 +1,5 @@
 (function () {
-  const { api, detailText, money, clock, el, store, recall } = window.Encore;
+  const { api, detailText, money, clock, el, store, recall, bindCount } = window.Encore;
   const HOLD_KEY = "encore.hold";
 
   const COPY = {
@@ -84,7 +84,8 @@
   // ---------- Kids ----------
   function renderKids() {
     const p = pkg(state.packageKey);
-    $("kids-count").textContent = String(state.kids);
+    const input = $("kids-count");
+    if (input.value !== String(state.kids)) input.value = String(state.kids);
     $("kids-minus").disabled = state.kids <= state.catalog.min_kids;
     $("kids-plus").disabled = state.kids >= state.catalog.max_kids;
     const extra = Math.max(0, state.kids - p.included_kids);
@@ -97,10 +98,14 @@
     );
   }
 
-  function changeKids(delta) {
-    state.kids = Math.min(state.catalog.max_kids, Math.max(state.catalog.min_kids, state.kids + delta));
+  function setKids(value) {
+    state.kids = Math.min(state.catalog.max_kids, Math.max(state.catalog.min_kids, value));
     renderKids();
     requestQuote();
+  }
+
+  function changeKids(delta) {
+    setKids(state.kids + delta);
   }
 
   // ---------- Add-ons ----------
@@ -110,6 +115,52 @@
     if (key === "tournament" && !quantity) delete state.addons.highlight_reel;
     renderAddons();
     requestQuote();
+  }
+
+  // Pack cards update in place instead of re-rendering the grid, so a focused quantity input keeps focus while typing.
+  function packAddon(a, iconBox, body) {
+    const max = state.catalog.max_pack_quantity;
+    const qty = () => state.addons[a.key] || 0;
+    const input = el("input", {
+      type: "text",
+      inputmode: "numeric",
+      pattern: "[0-9]*",
+      enterkeyhint: "done",
+      autocomplete: "off",
+      maxlength: "2",
+      "aria-label": `${a.label} quantity`,
+      value: String(qty()),
+    });
+    const minus = el("button", { type: "button", "aria-label": `Fewer ${a.label}`, text: "−" });
+    const plus = el("button", { type: "button", "aria-label": `More ${a.label}`, text: "+" });
+    const card = el("div", { class: "addon" }, [
+      iconBox,
+      body,
+      el("div", { class: "addon-side" }, [
+        el("span", { class: "addon-price", text: `+${money(a.price_cents)}` }),
+        el("div", { class: "stepper small", role: "group", "aria-label": `${a.label} quantity` }, [minus, input, plus]),
+      ]),
+    ]);
+    function sync() {
+      const value = qty();
+      card.classList.toggle("on", value > 0);
+      minus.disabled = value <= 0;
+      plus.disabled = value >= max;
+      if (input.value !== String(value) && document.activeElement !== input) input.value = String(value);
+    }
+    function set(value) {
+      const clamped = Math.min(max, Math.max(0, value));
+      if (clamped > 0) state.addons[a.key] = clamped;
+      else delete state.addons[a.key];
+      input.value = String(clamped);
+      sync();
+      requestQuote();
+    }
+    minus.addEventListener("click", () => set(qty() - 1));
+    plus.addEventListener("click", () => set(qty() + 1));
+    bindCount(input, 0, max, qty, set);
+    sync();
+    return card;
   }
 
   function renderAddons() {
@@ -133,26 +184,7 @@
             el("div", { class: "addon-side" }, [el("span", { class: "addon-included", text: "Included" })]),
           ]);
         }
-        if (a.has_quantity) {
-          return el("div", { class: "addon" + (qty ? " on" : "") }, [
-            iconBox,
-            body,
-            el("div", { class: "addon-side" }, [
-              el("span", { class: "addon-price", text: `+${money(a.price_cents)}` }),
-              el("div", { class: "stepper small", role: "group", "aria-label": `${a.label} quantity` }, [
-                el("button", { type: "button", "aria-label": `Fewer ${a.label}`, disabled: qty <= 0, onclick: () => setAddon(a.key, qty - 1), text: "−" }),
-                el("output", { "aria-live": "polite", text: String(qty) }),
-                el("button", {
-                  type: "button",
-                  "aria-label": `More ${a.label}`,
-                  disabled: qty >= state.catalog.max_pack_quantity,
-                  onclick: () => setAddon(a.key, qty + 1),
-                  text: "+",
-                }),
-              ]),
-            ]),
-          ]);
-        }
+        if (a.has_quantity) return packAddon(a, iconBox, body);
         return el(
           "button",
           {
@@ -469,6 +501,7 @@
       return;
     }
     state.catalog = data;
+    bindCount($("kids-count"), data.min_kids, data.max_kids, () => state.kids, setKids);
     state.kids = pkg(state.packageKey).included_kids;
     if (await restoreHold()) return;
     renderPackages();
