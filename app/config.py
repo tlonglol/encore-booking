@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     square_webhook_notification_url: str = ""
     # Local only: with no Square access token, checkout is a fake page that sends a signed webhook to ourselves.
     dev_fake_square: bool = False
+    # Twilio SMS. With any of these empty, messages are logged to the console instead of sent.
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+    owner_phone: str = ""
+    discord_webhook_url: str = ""
+
+    @property
+    def twilio_enabled(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_from_number)
 
     @property
     def fake_square_enabled(self) -> bool:

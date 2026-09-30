@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
+from app.notifications import notify_after_commit
 from app.services.booking import handle_square_webhook
 from app.services.square import SIGNATURE_HEADER
 
@@ -16,5 +17,7 @@ async def raw_body(request: Request) -> bytes:
 
 @router.post("/api/webhooks/square")
 def square_webhook(request: Request, body: bytes = Depends(raw_body), db: Session = Depends(get_db)) -> JSONResponse:
-    result = handle_square_webhook(db, get_settings(), body, request.headers.get(SIGNATURE_HEADER))
+    settings = get_settings()
+    result = handle_square_webhook(db, settings, body, request.headers.get(SIGNATURE_HEADER))
+    notify_after_commit(db, settings, result)
     return JSONResponse(status_code=result.status_code, content={"outcome": result.outcome})

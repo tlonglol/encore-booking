@@ -65,16 +65,16 @@ def parse_payment_event(event: Any) -> PaymentEvent | None:
     )
 
 
-def _payment_already_recorded(db: Session, payment_id: str) -> bool:
-    return bool(
-        db.execute(
-            text(
-                "SELECT EXISTS (SELECT 1 FROM bookings WHERE square_payment_id = :id)"
-                " OR EXISTS (SELECT 1 FROM payment_flags WHERE square_payment_id = :id)"
-            ),
-            {"id": payment_id},
-        ).scalar_one()
-    )
+def _recorded_hold(db: Session, payment_id: str) -> tuple[bool, uuid.UUID | None]:
+    """Whether this payment already became a booking or a flag, and the hold it belongs to."""
+    row = db.execute(
+        text(
+            "SELECT hold_id FROM bookings WHERE square_payment_id = :id"
+            " UNION ALL SELECT hold_id FROM payment_flags WHERE square_payment_id = :id LIMIT 1"
+        ),
+        {"id": payment_id},
+    ).one_or_none()
+    return (row is not None, row.hold_id if row is not None else None)
 
 
 def _flag(db: Session, event: PaymentEvent, hold_id: uuid.UUID | None, kind: str) -> None:
@@ -121,8 +121,9 @@ def _book(db: Session, hold: Hold, event: PaymentEvent) -> Booking:
 
 
 def _apply_payment(db: Session, event: PaymentEvent) -> WebhookResult:
-    if _payment_already_recorded(db, event.payment_id):
-        return WebhookResult(200, "duplicate")
+    recorded, recorded_hold = _recorded_hold(db, event.payment_id)
+    if recorded:
+        return WebhookResult(200, "duplicate", recorded_hold)
     hold = None
     if event.order_id:
         hold = db.scalars(
@@ -135,7 +136,7 @@ def _apply_payment(db: Session, event: PaymentEvent) -> WebhookResult:
         _flag(db, event, None, "unmatched_order")
         return WebhookResult(200, "unmatched")
     # Re-check under the hold lock: payment.created and payment.updated for one payment can arrive together.
-    if _payment_already_recorded(db, event.payment_id):
+    if _recorded_hold(db, event.payment_id)[0]:
         return WebhookResult(200, "duplicate", hold.id)
     if db.scalar(select(Booking.id).where(Booking.hold_id == hold.id)) is not None:
         _flag(db, event, hold.id, "duplicate_payment")
@@ -168,7 +169,7 @@ def process_payment_event(db: Session, event: PaymentEvent) -> WebhookResult:
     ).scalar_one_or_none()
     if claimed is None:
         db.rollback()
-        return WebhookResult(200, "duplicate")
+        return WebhookResult(200, "duplicate", _recorded_hold(db, event.payment_id)[1])
     result = _apply_payment(db, event)
     db.execute(
         text("UPDATE square_events SET outcome = :outcome WHERE event_id = :id"),

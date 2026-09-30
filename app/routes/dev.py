@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_db
 from app.models import Hold
+from app.notifications import notify_after_commit
 from app.services.booking import handle_square_webhook
 from app.services.square import signature_for
 
@@ -44,6 +45,7 @@ def fake_payment(hold_id: uuid.UUID, db: Session = Depends(get_db)) -> dict[str,
     signature = signature_for(raw, settings.square_webhook_signature_key, settings.square_webhook_notification_url)
     db.rollback()
     result = handle_square_webhook(db, settings, raw, signature)
+    notify_after_commit(db, settings, result)
     if result.status_code != 200:
         raise HTTPException(status_code=500, detail=f"Fake webhook rejected: {result.outcome}")
     return {"outcome": result.outcome}

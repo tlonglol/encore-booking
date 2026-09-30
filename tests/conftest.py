@@ -39,6 +39,11 @@ TEST_ENV = {
     "SQUARE_WEBHOOK_SIGNATURE_KEY": "test-signature-key",
     "SQUARE_WEBHOOK_NOTIFICATION_URL": "https://encore-test.example.com/api/webhooks/square",
     "DEV_FAKE_SQUARE": "false",
+    "TWILIO_ACCOUNT_SID": "",
+    "TWILIO_AUTH_TOKEN": "",
+    "TWILIO_FROM_NUMBER": "",
+    "OWNER_PHONE": "+19145559999",
+    "DISCORD_WEBHOOK_URL": "",
 }
 os.environ.update(TEST_ENV)
 
@@ -47,6 +52,7 @@ from alembic.config import Config  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.db import get_engine  # noqa: E402
+from app import notifications  # noqa: E402
 from app.services import square  # noqa: E402
 
 TABLES = ("notifications", "payment_flags", "square_events", "bookings", "holds", "slots")
@@ -118,4 +124,33 @@ def square_api(monkeypatch: pytest.MonkeyPatch) -> FakeSquareApi:
         return httpx.Client(base_url="https://connect.squareupsandbox.com", transport=httpx.MockTransport(fake.handle))
 
     monkeypatch.setattr(square, "http_client", client)
+    return fake
+
+
+class FakeMessaging:
+    """Stands in for Twilio and Discord. Records every request; never touches the network."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.twilio_status = 201
+        self.discord_status = 200
+        self.raise_error: Exception | None = None
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.raise_error:
+            raise self.raise_error
+        if request.url.host == "api.twilio.com":
+            if self.twilio_status != 201:
+                return httpx.Response(self.twilio_status, json={"code": 21608, "message": "Unverified number"})
+            return httpx.Response(201, json={"sid": f"SM{len(self.requests):032d}", "status": "queued"})
+        if self.discord_status != 200:
+            return httpx.Response(self.discord_status, json={"message": "Unknown Webhook"})
+        return httpx.Response(200, json={"id": f"{len(self.requests)}"})
+
+
+@pytest.fixture(autouse=True)
+def messaging(monkeypatch: pytest.MonkeyPatch) -> FakeMessaging:
+    fake = FakeMessaging()
+    monkeypatch.setattr(notifications, "http_client", lambda: httpx.Client(transport=httpx.MockTransport(fake.handle)))
     return fake

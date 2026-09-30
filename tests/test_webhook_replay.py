@@ -13,6 +13,12 @@ def _count(engine: Engine, sql: str) -> int:
         return conn.execute(text(sql)).scalar_one()
 
 
+def _notifications(engine: Engine) -> list[tuple[str, str, str]]:
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT audience, channel, status FROM notifications ORDER BY audience, channel"))
+        return [tuple(row) for row in rows]
+
+
 def test_webhook_replay(db: Session, engine: Engine) -> None:
     hold_id, order_id = create_hold_via_api(db)
     raw = payment_event(order_id, payment_id="pay-replay", event_id="evt-1")
@@ -21,6 +27,7 @@ def test_webhook_replay(db: Session, engine: Engine) -> None:
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM square_events") == 1
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
+    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
     body = client().get(f"/api/holds/{hold_id}").json()
     assert body["status"] == "booked"
     assert body["party"]["confirmation_code"]
@@ -35,6 +42,7 @@ def test_created_then_updated_for_same_payment_books_once(db: Session, engine: E
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM square_events") == 2
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
+    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
 
 
 def test_simultaneous_deliveries_book_once(db: Session, engine: Engine) -> None:
@@ -53,6 +61,7 @@ def test_simultaneous_deliveries_book_once(db: Session, engine: Engine) -> None:
     assert sorted(outcomes) == ["booked"] + ["duplicate"] * (len(event_ids) - 1)
     assert _count(engine, "SELECT count(*) FROM bookings") == 1
     assert _count(engine, "SELECT count(*) FROM payment_flags") == 0
+    assert _notifications(engine) == [("owner", "sms", "logged"), ("parent", "sms", "logged")]
 
 
 def test_second_different_payment_on_booked_order_is_flagged(db: Session, engine: Engine) -> None:
