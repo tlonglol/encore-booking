@@ -193,3 +193,20 @@ def hold_state(db: Session, hold_id: str) -> HoldState | None:
     if status == "pending_payment" and remaining <= 0:
         status = "expired"
     return HoldState(hold, status, starts_at, int(remaining), code)
+
+
+def attach_payment_link(db: Session, hold: Hold, link_id: str, url: str, order_id: str) -> None:
+    hold.square_payment_link_id = link_id
+    hold.checkout_url = url
+    hold.square_order_id = order_id
+    db.commit()
+
+
+def cancel_pending_hold(db: Session, hold_id: object) -> None:
+    """Frees the slot when checkout could not be started."""
+    db.rollback()
+    db.execute(
+        text("UPDATE holds SET status = 'cancelled', updated_at = now() WHERE id = :id AND status = 'pending_payment'"),
+        {"id": hold_id},
+    )
+    db.commit()

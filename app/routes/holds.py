@@ -11,17 +11,21 @@ from app.db import get_db
 from app.pricing import PACKAGES, PricingError
 from app.routes.availability import slot_out
 from app.schemas import HoldCreatedOut, HoldRequest, HoldStatusOut, LineItemOut, PartyDetails
+from app.models import Slot
 from app.services.holds import (
     HoldInput,
     HoldLimitReached,
     SlotNotFound,
     SlotTooSoon,
     SlotUnavailable,
+    attach_payment_link,
+    cancel_pending_hold,
     create_hold,
     hold_state,
     normalize_ip,
 )
 from app.services.slots import open_alternatives
+from app.services.square import SquareError, create_deposit_link
 from app.timeutil import format_day, format_time, venue_today
 
 router = APIRouter()
@@ -78,11 +82,42 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
             status_code=429,
             content={"detail": str(error), "expires_at": error.expires_at.isoformat()},
         )
+    slot = db.get(Slot, hold.slot_id)
+    assert slot is not None
+    try:
+        link = create_deposit_link(settings, hold, f"{format_day(slot.starts_at)} {format_time(slot.starts_at)}")
+    except SquareError as error:
+        cancel_pending_hold(db, hold.id)
+        raise HTTPException(
+            status_code=502, detail="We couldn't start checkout, and your date was released. Please try again."
+        ) from error
+    attach_payment_link(db, hold, link.id, link.url, link.order_id)
     return HoldCreatedOut(
         hold_id=str(hold.id),
         checkout_url=hold.checkout_url,
         expires_at=hold.expires_at,
         seconds_remaining=max(0, int((hold.expires_at - datetime.now(UTC)).total_seconds())),
+    )
+
+
+def party_details(
+    record: Any, starts_at: datetime, confirmation_code: str | None, first_name: str | None
+) -> PartyDetails:
+    """record is a Hold or a Booking; both carry the same snapshot fields."""
+    package = PACKAGES[record.package]
+    return PartyDetails(
+        confirmation_code=confirmation_code,
+        first_name=first_name,
+        package=record.package,
+        package_label=package.label,
+        day_label=format_day(starts_at),
+        time_label=format_time(starts_at),
+        hours=package.hours + (1 if "extra_hour" in record.addons else 0),
+        kids=record.kids,
+        line_items=[LineItemOut(**item) for item in record.line_items],
+        total_cents=record.total_cents,
+        deposit_cents=record.deposit_cents,
+        balance_cents=record.total_cents - record.deposit_cents,
     )
 
 
@@ -97,25 +132,16 @@ def get_hold(hold_id: str, db: Session = Depends(get_db)) -> HoldStatusOut:
         raise HTTPException(status_code=404, detail="Hold not found")
     hold = state.hold
     booked = state.status == "booked"
-    package = PACKAGES[hold.package]
     return HoldStatusOut(
         hold_id=str(hold.id),
         status=state.status,
         expires_at=hold.expires_at,
         seconds_remaining=state.seconds_remaining,
         checkout_url=hold.checkout_url if state.status == "pending_payment" else None,
-        party=PartyDetails(
-            confirmation_code=state.confirmation_code if booked else None,
-            first_name=hold.first_name if booked else None,
-            package=hold.package,
-            package_label=package.label,
-            day_label=format_day(state.starts_at),
-            time_label=format_time(state.starts_at),
-            hours=package.hours + (1 if "extra_hour" in hold.addons else 0),
-            kids=hold.kids,
-            line_items=[LineItemOut(**item) for item in hold.line_items],
-            total_cents=hold.total_cents,
-            deposit_cents=hold.deposit_cents,
-            balance_cents=hold.total_cents - hold.deposit_cents,
+        party=party_details(
+            hold,
+            state.starts_at,
+            state.confirmation_code if booked else None,
+            hold.first_name if booked else None,
         ),
     )

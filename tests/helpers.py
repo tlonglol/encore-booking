@@ -116,3 +116,57 @@ def hold_body(slot_id: int, n: int = 0, **overrides: object) -> dict[str, object
 
 def client_from(ip: str) -> TestClient:
     return TestClient(app, base_url="https://testserver", client=(ip, 50000))
+
+
+WEBHOOK_KEY = "test-signature-key"
+WEBHOOK_URL = "https://encore-test.example.com/api/webhooks/square"
+
+
+def payment_event(
+    order_id: str,
+    payment_id: str = "pay-1",
+    event_id: str | None = None,
+    status: str = "COMPLETED",
+    amount: int = 10000,
+    currency: str = "USD",
+    event_type: str = "payment.updated",
+) -> bytes:
+    import json
+
+    return json.dumps(
+        {
+            "merchant_id": "MTEST",
+            "type": event_type,
+            "event_id": event_id or str(uuid.uuid4()),
+            "created_at": "2026-10-03T14:00:00Z",
+            "data": {
+                "type": "payment",
+                "id": payment_id,
+                "object": {
+                    "payment": {
+                        "id": payment_id,
+                        "status": status,
+                        "amount_money": {"amount": amount, "currency": currency},
+                        "order_id": order_id,
+                    }
+                },
+            },
+        }
+    ).encode()
+
+
+def deliver(raw: bytes, key: str = WEBHOOK_KEY, url: str = WEBHOOK_URL, signature: str | None = None):  # type: ignore[no-untyped-def]
+    from app.services.square import signature_for
+
+    headers = {"Content-Type": "application/json"}
+    headers["x-square-hmacsha256-signature"] = signature if signature is not None else signature_for(raw, key, url)
+    return client().post("/api/webhooks/square", content=raw, headers=headers)
+
+
+def create_hold_via_api(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
+    """Returns (hold_id, square_order_id) for a fresh pending hold created through the real endpoint."""
+    slot = make_slot(db, next_saturday(days_ahead))
+    response = client_from(f"203.0.113.{100 + n}").post("/api/holds", json=hold_body(slot.id, n))
+    assert response.status_code == 201, response.text
+    hold_id = response.json()["hold_id"]
+    return hold_id, f"order-{hold_id}"

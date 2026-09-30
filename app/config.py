@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +17,17 @@ class Settings(BaseSettings):
     admin_password: str = ""
     session_secret: str = ""
     trust_proxy_headers: bool = False
+    square_environment: Literal["sandbox", "production"] = "sandbox"
+    square_access_token: str = ""
+    square_location_id: str = ""
+    square_webhook_signature_key: str = ""
+    square_webhook_notification_url: str = ""
+    # Local only: with no Square access token, checkout is a fake page that sends a signed webhook to ourselves.
+    dev_fake_square: bool = False
+
+    @property
+    def fake_square_enabled(self) -> bool:
+        return self.dev_fake_square and not self.square_access_token and self.square_environment == "sandbox"
 
 
 @lru_cache

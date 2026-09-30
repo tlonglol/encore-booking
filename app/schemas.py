@@ -79,3 +79,8 @@ class HoldStatusOut(BaseModel):
     seconds_remaining: int
     checkout_url: str | None
     party: PartyDetails
+
+
+class BookingOut(BaseModel):
+    status: str
+    party: PartyDetails

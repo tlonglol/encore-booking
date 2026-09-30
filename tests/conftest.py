@@ -1,7 +1,9 @@
+import json
 import os
 from collections.abc import Iterator
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine, text
@@ -30,6 +32,13 @@ TEST_ENV = {
     "WEEKENDS_AHEAD": "8",
     "ADMIN_PASSWORD": "test-admin-password",
     "SESSION_SECRET": "test-session-secret",
+    "TRUST_PROXY_HEADERS": "false",
+    "SQUARE_ENVIRONMENT": "sandbox",
+    "SQUARE_ACCESS_TOKEN": "test-square-token",
+    "SQUARE_LOCATION_ID": "LTESTLOCATION",
+    "SQUARE_WEBHOOK_SIGNATURE_KEY": "test-signature-key",
+    "SQUARE_WEBHOOK_NOTIFICATION_URL": "https://encore-test.example.com/api/webhooks/square",
+    "DEV_FAKE_SQUARE": "false",
 }
 os.environ.update(TEST_ENV)
 
@@ -38,6 +47,7 @@ from alembic.config import Config  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.db import get_engine  # noqa: E402
+from app.services import square  # noqa: E402
 
 TABLES = ("notifications", "payment_flags", "square_events", "bookings", "holds", "slots")
 
@@ -73,3 +83,39 @@ def engine() -> Engine:
 def db(engine: Engine) -> Iterator[Session]:
     with Session(engine, expire_on_commit=False) as session:
         yield session
+
+
+class FakeSquareApi:
+    """Stands in for Square's REST API. Records every request; never touches the network."""
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, object]] = []
+        self.fail_with: int | None = None
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.requests.append({"path": request.url.path, "headers": dict(request.headers), "body": body})
+        if self.fail_with:
+            return httpx.Response(self.fail_with, json={"errors": [{"code": "INTERNAL_SERVER_ERROR"}]})
+        key = body["idempotency_key"]
+        return httpx.Response(
+            200,
+            json={
+                "payment_link": {
+                    "id": f"link-{key}",
+                    "url": f"https://sandbox.square.link/u/{key[:8]}",
+                    "order_id": f"order-{key}",
+                }
+            },
+        )
+
+
+@pytest.fixture(autouse=True)
+def square_api(monkeypatch: pytest.MonkeyPatch) -> FakeSquareApi:
+    fake = FakeSquareApi()
+
+    def client(settings: object) -> httpx.Client:
+        return httpx.Client(base_url="https://connect.squareupsandbox.com", transport=httpx.MockTransport(fake.handle))
+
+    monkeypatch.setattr(square, "http_client", client)
+    return fake
