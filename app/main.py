@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
 from app.config import get_settings
-from app.routes import admin, availability, quote
+from app.routes import admin, availability, holds, quote
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 app.include_router(quote.router)
 app.include_router(availability.router)
+app.include_router(holds.router)
 app.include_router(admin.router)
 
 if get_settings().serve_frontend and FRONTEND_DIR.is_dir():

@@ -96,3 +96,23 @@ def make_booking(db: Session, hold: Hold, slot: Slot) -> Booking:
     db.add(booking)
     db.commit()
     return booking
+
+
+def hold_body(slot_id: int, n: int = 0, **overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "slot_id": slot_id,
+        "package": "standard",
+        "kids": 18,
+        "addons": {"pizza_pack": 1},
+        "first_name": "Pat",
+        "last_name": f"Parent{n}",
+        "phone": f"(914) 555-{n:04d}",
+        "email": f"parent{n}@example.com",
+        "notes": "Nut allergy at one guest",
+    }
+    body.update(overrides)
+    return body
+
+
+def client_from(ip: str) -> TestClient:
+    return TestClient(app, base_url="https://testserver", client=(ip, 50000))

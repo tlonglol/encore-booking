@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     weekends_ahead: int = 8
     admin_password: str = ""
     session_secret: str = ""
+    trust_proxy_headers: bool = False
 
 
 @lru_cache
