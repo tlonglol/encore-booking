@@ -53,10 +53,12 @@ The live site's booking form also offers "Venue Buyout, custom quote (off-hours)
 - Refund rule: full refund if cancelled 7+ days out. Store the data needed to apply it (booking created_at, event date, cancelled_at); refund automation is out of scope for demo.
 
 ## Inventory model
+- Weekend mornings are open for online booking by default; the owner blocks exceptions. Weekdays are request-only (see Party requests). `WEEKEND_DEFAULT` (env: `open` | `request`, default `open`) flips weekends into the same request-only behavior; while it is `request`, holds are refused server-side for every date.
 - One party per slot (every package is a full-venue buyout, so a slot can hold exactly one booking).
-- A slot is (date, start_time). Demo rule: one bookable slot per weekend day at 10:00 AM America/New_York, stored as timestamptz in UTC. Duration is display-only in v1.
-- A generator materializes slots for the next 8 weekends from a template. It is idempotent and runs lazily whenever availability is requested. Owner can block a date in admin. Blocking is refused (409) while the slot has an active hold or a live booking; otherwise a parent could pay into a blocked slot.
-- Slot states are computed, not stored: open, held (active unexpired hold exists), booked, blocked, past (includes inside the lead-time window).
+- A slot is (date, start_time). Demo rule: one bookable slot per weekend day at 10:00 AM America/New_York, stored as timestamptz in UTC. Duration is display-only in v1. Weekday request dates have no slot row; a request stores its own date and preferred start time.
+- A generator materializes weekend slots for the next 8 weekends from a template. It is idempotent and runs lazily whenever availability is requested. Owner can block a date in admin. Blocking is refused (409) while the slot has an active hold or a live booking; otherwise a parent could pay into a blocked slot. Weekday dates cannot be blocked in v1; the owner simply declines their requests.
+- Availability covers every date from today through the last day of the 8th weekend. Slot states are computed, not stored: open, held (active unexpired hold exists), booked, blocked, past (inside the lead-time window), request (weekdays; weekends too when `WEEKEND_DEFAULT=request`).
+- The date grid shows five states: open (unmarked, selectable), held ("On hold, may free up in a few minutes", not selectable), booked ("Booked"), unavailable (blocked or inside the lead-time window; the API keeps blocked and past distinct because admin unblocks), and request. The grid re-fetches availability every 30 seconds and when the tab regains focus, so a lapsed hold flips back to open without a reload.
 
 ## Booking flow (the money path)
 1. `GET /api/availability` returns the next 8 weekends with per-slot status.
@@ -75,6 +77,15 @@ The live site's booking form also offers "Venue Buyout, custom quote (off-hours)
    - The hold_id passes through Square's redirect and browser history, so a `booked` hold returns only: confirmation_code, first name, package, date, time, kids, total, and balance. Never phone, email, or notes. `GET /api/bookings/{code}` returns the same fields.
 
 Square sends its own payment receipt email; that covers the payment record. Our SMS covers the booking.
+
+## Party requests (stage 1)
+Weekdays (and weekends while `WEEKEND_DEFAULT=request`) take requests instead of holds. A request is an inquiry: no hold, no payment, no slot is taken, and the owner replies personally.
+1. Tapping a request date opens a short form: package, kids, add-ons, preferred start time (9:00 AM to 8:00 PM), first name, last name, phone, email, notes.
+2. `POST /api/requests` validates exactly like a hold (the pricing function prices the summary; phone normalized to E.164) and stores a `requests` row: date, preferred time, status (`new`; later statuses reserved for stage 2), a snapshot of package, kids, add-ons, line items, and total, contact fields, client IP, timestamps.
+3. The date must be a request date: weekday, or weekend while `WEEKEND_DEFAULT=request` and the date is not booked or blocked. Weekend dates while weekends are `open` are rejected with "book it online". Dates inside the lead-time window are rejected with the call-us message; dates more than a year out are rejected.
+4. After commit, the owner is notified by SMS and Discord (same rules and notifications table as booking notices, keyed by request id, best-effort, never blocking the response). The parent sees an on-page confirmation; no parent SMS in stage 1.
+5. Duplicates: at most one `new` request per phone per date and per email per date, enforced by partial unique indexes; a duplicate returns 409 with a friendly "we already have your request" message.
+6. Admin shows the requests list read-only; acting on a request is by phone in stage 1 (automation is stage 2, see Before going live).
 
 ## Correctness requirements
 - **Double-booking**: exactly one active hold-or-booking per slot, enforced by a database constraint (partial unique index treating expired holds as inactive, or an equivalent design), never by an application-level check alone. Two simultaneous hold requests: one gets 201, the other gets 409 plus a list of alternative open slots.
@@ -95,6 +106,7 @@ Square sends its own payment receipt email; that covers the payment record. Our 
 - Block / unblock a date.
 - Manually cancel a booking (frees the slot, records cancelled_at; refund handled by owner in Square for now).
 - Payment flags visible (expired-hold payments, duplicate payments, amount mismatches, unmatched orders).
+- Party requests list: date, preferred time, package, kids, add-ons, total, contact, notes, status. Read-only in stage 1.
 - Notification log with failures visible.
 
 ## Notifications
@@ -102,6 +114,7 @@ Square sends its own payment receipt email; that covers the payment record. Our 
   - {confirmation link} is the permanent `confirm.html?code={confirmation_code}` URL on the frontend origin, so a parent who closes the tab can get back to the confirmation.
 - Owner SMS: "NEW PARTY: {package} {date} {time}, {kids} kids, {addons}. Deposit paid. {parent name} {phone}."
 - Owner Discord webhook (optional): same content as the owner SMS, posted if `DISCORD_WEBHOOK_URL` is set. Free and permanent, unlike SMS.
+- Owner request SMS (and Discord): "PARTY REQUEST: {package} {date} at {preferred time}, {kids} kids, {addons}. Total ${x}. {parent name} {phone} {email}." Notes stay in admin, not in the SMS.
 - Every send attempt is written to a notifications table (channel, recipient, body, status, error, sent_at).
 - Twilio trial only delivers to verified numbers and prefixes messages with a trial notice: verify Tyler's number now, the owner's before demo day. If Twilio env vars are missing, log the message body instead so tests and dev never depend on Twilio.
 
@@ -116,6 +129,7 @@ On a phone, in under 3 minutes:
 4. Confirmation SMS arrives on the phone; owner SMS (and Discord post, if configured) arrives on the second phone.
 5. Second phone tries to book the same Saturday: sees it held/booked and gets offered the next open slot.
 6. Admin page already shows the booking.
+7. Tap a weekday: the request form appears, send it, the owner phone gets the priced request text, and admin shows the request.
 
 ## Required tests
 1. `test_concurrent_holds`: N parallel hold requests for one slot (real parallel Postgres connections) yield exactly one success and N-1 conflicts. Each request uses a distinct phone, email, and client IP so the hold caps (429) cannot mask the slot conflict (409).
@@ -125,6 +139,7 @@ On a phone, in under 3 minutes:
 5. `test_pricing_table`: table-driven cases covering included kids boundaries (15/16, 20/21, 25/26), included-free add-ons per package, pack quantities, Highlight Reel without Tournament rejected.
 6. `test_expired_hold_payment`: payment event referencing an expired hold creates a flag, not a booking.
 7. `test_hold_limits`: a second active hold for the same phone number returns 429; a hold on a slot inside the lead-time window is rejected.
+8. `test_requests`: a weekday request stores a server-priced snapshot and produces exactly one owner notification per configured channel; a second `new` request for the same phone and date returns 409; a weekend request is rejected while `WEEKEND_DEFAULT=open` and accepted when `request`; a hold is refused while `WEEKEND_DEFAULT=request`; a request inside the lead-time window is rejected.
 
 ## Deployment notes
 - Alembic migrations run from the laptop against Neon's direct connection string. Lambda uses Neon's pooled connection string.
@@ -136,3 +151,6 @@ On a phone, in under 3 minutes:
 - Live Square credentials entered by the owner in the hosting environment, never in the repo.
 - US business texting registration (A2P 10DLC) is required before Twilio delivers to real parents; it takes days and a small fee. Discord webhook is the zero-cost owner channel in the meantime.
 - Point book.encoregaming.us at CloudFront and swap the "Book a Party" link on the existing site.
+- Requests stage 2: the owner SMS/Discord carries approve and decline links, each a single-use token; the link opens a page whose button POSTs the action (never acted on GET); approve creates a 24-hour hold and texts the parent the checkout link; decline texts a polite no with open alternatives.
+- A weekly nudge to the owner summarizing `new` requests not yet acted on.
+- Pay-to-request (optional): the parent pays the deposit up front to submit a request, with an automatic Square refund if the request is declined or expires unanswered.
