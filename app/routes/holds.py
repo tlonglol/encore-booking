@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_db
 from app.pricing import PACKAGES, PricingError
-from app.routes.availability import slot_out
+from app.routes.availability import day_out
 from app.schemas import HoldCreatedOut, HoldRequest, HoldStatusOut, LineItemOut, PartyDetails
 from app.models import Slot
 from app.services.holds import (
@@ -43,13 +43,18 @@ def client_ip(request: Request) -> str | None:
 def _alternatives(db: Session) -> list[dict[str, Any]]:
     settings = get_settings()
     today = venue_today(datetime.now(UTC))
-    views = open_alternatives(db, today, settings.min_lead_days, settings.weekends_ahead)
-    return [slot_out(view).model_dump(mode="json") for view in views]
+    views = open_alternatives(db, today, settings.min_lead_days, settings.weekends_ahead, settings.weekend_default)
+    return [day_out(view).model_dump(mode="json") for view in views]
 
 
 @router.post("/api/holds", status_code=201, response_model=HoldCreatedOut)
 def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)) -> Any:
     settings = get_settings()
+    if settings.weekend_default == "request":
+        raise HTTPException(
+            status_code=422,
+            detail="Dates are request-only right now. Send a request and we'll text you back.",
+        )
     data = HoldInput(
         slot_id=body.slot_id,
         package=body.package,

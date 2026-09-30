@@ -12,7 +12,7 @@ from app.notifications import addons_summary
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
 from app.services.slots import SlotConflict, set_blocked
-from app.timeutil import format_day, format_time
+from app.timeutil import format_clock, format_date, format_day, format_time
 
 router = APIRouter(prefix="/api/admin")
 
@@ -170,4 +170,28 @@ def notifications(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "body": row.body,
         }
         for row in admin_service.list_notifications(db)
+    ]
+
+
+@router.get("/requests", dependencies=[Depends(require_admin)])
+def party_requests(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": row.id,
+            "date": row.local_date.isoformat(),
+            "day_label": format_date(row.local_date),
+            "time_label": format_clock(row.preferred_time),
+            "status": row.status,
+            "package": PACKAGES[row.package].label,
+            "kids": row.kids,
+            "addons": addons_summary(row.addons),
+            "total_cents": row.total_cents,
+            "deposit_cents": row.deposit_cents,
+            "name": f"{row.first_name} {row.last_name}",
+            "phone": row.phone,
+            "email": row.email,
+            "notes": row.notes,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in admin_service.list_requests(db)
     ]

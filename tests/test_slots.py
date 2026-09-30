@@ -1,9 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Slot
+from app.config import get_settings
 from app.services.slots import availability
 from app.timeutil import upcoming_weekend_days
 from tests.helpers import admin_client, client, make_booking, make_hold, make_slot, next_saturday
@@ -24,7 +26,7 @@ def test_weekend_in_progress_counts_as_the_first() -> None:
 
 def test_slots_are_10am_new_york_across_dst(db: Session) -> None:
     views = availability(db, date(2026, 10, 28), 2, 2)
-    by_date = {view.local_date: view.starts_at.astimezone(UTC) for view in views}
+    by_date = {view.local_date: view.starts_at.astimezone(UTC) for view in views if view.starts_at}
     assert by_date[date(2026, 10, 31)] == datetime(2026, 10, 31, 14, 0, tzinfo=UTC)  # EDT
     assert by_date[date(2026, 11, 7)] == datetime(2026, 11, 7, 15, 0, tzinfo=UTC)  # EST
 
@@ -65,10 +67,16 @@ def test_availability_endpoint() -> None:
     response = client().get("/api/availability")
     assert response.status_code == 200
     body = response.json()
-    assert len(body["slots"]) >= 15
-    first = body["slots"][0]
-    assert first["time_label"] == "10:00 AM"
-    assert set(first) == {"id", "date", "day_label", "time_label", "starts_at", "status"}
+    assert body["weekend_default"] == "open"
+    days = body["days"]
+    assert len(days) >= 50, "every date through the last weekend, not just weekends"
+    slot_days = [d for d in days if d["slot_id"] is not None]
+    weekday_days = [d for d in days if d["slot_id"] is None]
+    assert len(slot_days) >= 15
+    assert all(d["time_label"] == "10:00 AM" for d in slot_days)
+    assert all(d["time_label"] is None and d["status"] in {"request", "past"} for d in weekday_days)
+    assert any(d["status"] == "request" for d in weekday_days)
+    assert set(days[0]) == {"date", "day_label", "status", "slot_id", "time_label", "starts_at"}
 
 
 def test_admin_requires_login(db: Session) -> None:
@@ -85,7 +93,7 @@ def test_admin_block_and_unblock(db: Session) -> None:
     slot = make_slot(db, day)
     admin = admin_client()
     assert admin.post(f"/api/admin/slots/{slot.id}/block").json() == {"id": slot.id, "blocked": True}
-    statuses = {s["date"]: s["status"] for s in client().get("/api/availability").json()["slots"]}
+    statuses = {s["date"]: s["status"] for s in client().get("/api/availability").json()["days"]}
     assert statuses[day.isoformat()] == "blocked"
     assert admin.post(f"/api/admin/slots/{slot.id}/unblock").json() == {"id": slot.id, "blocked": False}
     assert admin.post("/api/admin/slots/999999/block").status_code == 404
@@ -105,3 +113,13 @@ def test_blocking_a_slot_with_only_an_expired_hold_is_allowed(db: Session) -> No
     slot = make_slot(db, next_saturday(7))
     make_hold(db, slot, expires_in=timedelta(minutes=-1))
     assert admin_client().post(f"/api/admin/slots/{slot.id}/block").status_code == 200
+
+
+def test_weekends_are_request_only_in_request_mode(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(get_settings(), "weekend_default", "request")
+    body = client().get("/api/availability").json()
+    assert body["weekend_default"] == "request"
+    slot_days = [d for d in body["days"] if d["slot_id"] is not None]
+    assert slot_days
+    assert {d["status"] for d in slot_days} <= {"request", "past", "held", "booked", "blocked"}
+    assert not any(d["status"] == "open" for d in body["days"])

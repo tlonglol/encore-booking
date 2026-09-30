@@ -29,6 +29,7 @@ TEST_ENV = {
     "FRONTEND_ORIGIN": "http://testserver",
     "SERVE_FRONTEND": "false",
     "MIN_LEAD_DAYS": "2",
+    "WEEKEND_DEFAULT": "open",
     "WEEKENDS_AHEAD": "8",
     "ADMIN_PASSWORD": "test-admin-password",
     "SESSION_SECRET": "test-session-secret",
@@ -55,7 +56,7 @@ from app.db import get_engine  # noqa: E402
 from app import notifications  # noqa: E402
 from app.services import square  # noqa: E402
 
-TABLES = ("notifications", "payment_flags", "square_events", "bookings", "holds", "slots")
+TABLES = ("notifications", "payment_flags", "square_events", "bookings", "holds", "requests", "slots")
 
 
 def _migrate(url: str) -> None:

@@ -6,21 +6,22 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import Slot
-from app.timeutil import first_bookable_date, slot_start_utc, upcoming_weekend_days
+from app.timeutil import first_bookable_date, is_weekend, slot_start_utc, window_days
 
 OPEN = "open"
 HELD = "held"
 BOOKED = "booked"
 BLOCKED = "blocked"
 PAST = "past"
+REQUEST = "request"
 
 
 @dataclass(frozen=True)
-class SlotView:
-    id: int
+class DayView:
     local_date: date
-    starts_at: datetime
     status: str
+    slot_id: int | None
+    starts_at: datetime | None
 
 
 class SlotConflict(Exception):
@@ -49,11 +50,24 @@ _STATUS_QUERY = text(
 )
 
 
-def slot_views(db: Session, first: date, last: date, today: date, min_lead_days: int) -> list[SlotView]:
+def availability(
+    db: Session, today: date, min_lead_days: int, weekends: int, weekend_default: str = "open"
+) -> list[DayView]:
+    """Every date from today through the last weekend: weekend slots with computed state, weekdays as request dates."""
+    days = window_days(today, weekends)
+    ensure_slots(db, [day for day in days if is_weekend(day)])
+    rows = {
+        row.local_date: row
+        for row in db.execute(_STATUS_QUERY, {"first": days[0], "last": days[-1]})
+    }
     bookable_from = first_bookable_date(today, min_lead_days)
     views = []
-    for row in db.execute(_STATUS_QUERY, {"first": first, "last": last}):
-        if row.local_date < bookable_from:
+    for day in days:
+        row = rows.get(day)
+        if row is None:
+            views.append(DayView(day, PAST if day < bookable_from else REQUEST, None, None))
+            continue
+        if day < bookable_from:
             status = PAST
         elif row.booked:
             status = BOOKED
@@ -61,22 +75,18 @@ def slot_views(db: Session, first: date, last: date, today: date, min_lead_days:
             status = HELD
         elif row.blocked:
             status = BLOCKED
+        elif weekend_default == "request":
+            status = REQUEST
         else:
             status = OPEN
-        views.append(SlotView(row.id, row.local_date, row.starts_at, status))
+        views.append(DayView(day, status, row.id, row.starts_at))
     return views
 
 
-def availability(db: Session, today: date, min_lead_days: int, weekends: int) -> list[SlotView]:
-    days = upcoming_weekend_days(today, weekends)
-    ensure_slots(db, days)
-    if not days:
-        return []
-    return slot_views(db, days[0], days[-1], today, min_lead_days)
-
-
-def open_alternatives(db: Session, today: date, min_lead_days: int, weekends: int, limit: int = 3) -> list[SlotView]:
-    return [view for view in availability(db, today, min_lead_days, weekends) if view.status == OPEN][:limit]
+def open_alternatives(
+    db: Session, today: date, min_lead_days: int, weekends: int, weekend_default: str = "open", limit: int = 3
+) -> list[DayView]:
+    return [view for view in availability(db, today, min_lead_days, weekends, weekend_default) if view.status == OPEN][:limit]
 
 
 def set_blocked(db: Session, slot_id: int, blocked: bool) -> Slot | None:

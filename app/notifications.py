@@ -9,10 +9,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Booking, Hold, Notification, Slot
+from app.models import Booking, Hold, Notification, PartyRequest, Slot
 from app.pricing import ADDONS, PACKAGES
 from app.services.booking import WebhookResult
-from app.timeutil import format_day, format_time
+from app.timeutil import format_clock, format_date, format_day, format_time
 
 TWILIO_URL = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 REQUEST_TIMEOUT_SECONDS = 5.0
@@ -58,6 +58,15 @@ def owner_booked_text(booking: Booking) -> str:
     return (
         f"NEW PARTY: {PACKAGES[booking.package].label} {when(booking.event_starts_at)}, {booking.kids} kids, "
         f"{addons_summary(booking.addons)}. Deposit paid. {booking.first_name} {booking.last_name} {booking.phone}."
+    )
+
+
+def owner_request_text(request: PartyRequest) -> str:
+    return (
+        f"PARTY REQUEST: {PACKAGES[request.package].label} {format_date(request.local_date)} at "
+        f"{format_clock(request.preferred_time)}, {request.kids} kids, {addons_summary(request.addons)}. "
+        f"Total {dollars(request.total_cents)}. "
+        f"{request.first_name} {request.last_name} {request.phone} {request.email}."
     )
 
 
@@ -122,22 +131,32 @@ def _send_discord(settings: Settings, body: str) -> str:
     return str(response.json().get("id", ""))
 
 
-def _claim(db: Session, hold_id: uuid.UUID, booking_id: int | None, message: Message) -> int | None:
-    """Writes the row before sending. The unique (hold, audience, channel) key makes a second claim a no-op."""
-    claimed = db.execute(
-        insert(Notification)
-        .values(
-            hold_id=hold_id,
-            booking_id=booking_id,
-            audience=message.audience,
-            channel=message.channel,
-            recipient=message.recipient,
-            body=message.body,
-            status="pending",
+def _claim(
+    db: Session,
+    message: Message,
+    hold_id: uuid.UUID | None = None,
+    booking_id: int | None = None,
+    request_id: int | None = None,
+) -> int | None:
+    """Writes the row before sending. The unique (subject, audience, channel) key makes a second claim a no-op."""
+    statement = insert(Notification).values(
+        hold_id=hold_id,
+        request_id=request_id,
+        booking_id=booking_id,
+        audience=message.audience,
+        channel=message.channel,
+        recipient=message.recipient,
+        body=message.body,
+        status="pending",
+    )
+    if request_id is not None:
+        statement = statement.on_conflict_do_nothing(
+            index_elements=["request_id", "audience", "channel"],
+            index_where=text("request_id IS NOT NULL"),
         )
-        .on_conflict_do_nothing(index_elements=["hold_id", "audience", "channel"])
-        .returning(Notification.id)
-    ).scalar_one_or_none()
+    else:
+        statement = statement.on_conflict_do_nothing(index_elements=["hold_id", "audience", "channel"])
+    claimed = db.execute(statement.returning(Notification.id)).scalar_one_or_none()
     db.commit()
     return claimed
 
@@ -176,7 +195,7 @@ def notify_after_commit(db: Session, settings: Settings, result: WebhookResult) 
         return
     for message in messages:
         try:
-            notification_id = _claim(db, result.hold_id, booking_id, message)
+            notification_id = _claim(db, message, hold_id=result.hold_id, booking_id=booking_id)
         except Exception:
             log.exception("Could not record %s %s notification", message.audience, message.channel)
             db.rollback()
@@ -193,4 +212,37 @@ def notify_after_commit(db: Session, settings: Settings, result: WebhookResult) 
                 _record(db, notification_id, "failed", None, str(error)[:500])
             except Exception:
                 log.exception("Could not record notification failure")
+                db.rollback()
+
+
+def notify_new_request(db: Session, settings: Settings, request_id: int) -> None:
+    """Best-effort owner notice for a new party request. Same rules as booking notices: after commit, never raises."""
+    try:
+        request = db.get(PartyRequest, request_id)
+        if request is None:
+            return
+        messages = _owner_messages(settings, owner_request_text(request))
+    except Exception:
+        log.exception("Could not build request notification for request %s", request_id)
+        db.rollback()
+        return
+    for message in messages:
+        try:
+            notification_id = _claim(db, message, request_id=request_id)
+        except Exception:
+            log.exception("Could not record request %s notification", request_id)
+            db.rollback()
+            continue
+        if notification_id is None:
+            continue
+        try:
+            status, provider_id = _deliver(settings, message)
+            _record(db, notification_id, status, provider_id, None)
+        except Exception as error:
+            log.warning("owner %s request notification failed: %s", message.channel, error)
+            db.rollback()
+            try:
+                _record(db, notification_id, "failed", None, str(error)[:500])
+            except Exception:
+                log.exception("Could not record request notification failure")
                 db.rollback()

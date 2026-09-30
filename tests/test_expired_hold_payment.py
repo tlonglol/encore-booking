@@ -21,7 +21,7 @@ def test_expired_hold_payment(db: Session, engine: Engine) -> None:
         flag = conn.execute(text("SELECT kind, hold_id::text, amount_cents FROM payment_flags")).one()
         assert tuple(flag) == ("paid_after_expiry", hold_id, 10000)
     assert client().get(f"/api/holds/{hold_id}").json()["status"] == "paid_after_expiry"
-    statuses = {s["id"]: s["status"] for s in client().get("/api/availability").json()["slots"]}
+    statuses = {s["slot_id"]: s["status"] for s in client().get("/api/availability").json()["days"]}
     assert statuses[slot.id] == "open", "a late payment does not take the slot"
 
 

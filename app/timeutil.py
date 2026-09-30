@@ -34,6 +34,24 @@ def upcoming_weekend_days(today: date, weekends: int) -> list[date]:
     return days
 
 
+def is_weekend(day: date) -> bool:
+    return day.weekday() >= SATURDAY
+
+
+def window_days(today: date, weekends: int) -> list[date]:
+    """Every date from today through the last day of the Nth weekend."""
+    last = upcoming_weekend_days(today, weekends)[-1]
+    return [today + timedelta(days=offset) for offset in range((last - today).days + 1)]
+
+
+def format_date(day: date) -> str:
+    return f"{day:%a}, {day:%b} {day.day}"
+
+
+def format_clock(moment: time) -> str:
+    return f"{moment.hour % 12 or 12}:{moment.minute:02d} {'AM' if moment.hour < 12 else 'PM'}"
+
+
 def format_day(moment: datetime) -> str:
     local = moment.astimezone(VENUE_TZ)
     return f"{local:%a}, {local:%b} {local.day}"

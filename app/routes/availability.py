@@ -6,35 +6,36 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.services.slots import SlotView, availability
-from app.timeutil import first_bookable_date, format_day, format_time, venue_today
+from app.services.slots import DayView, availability
+from app.timeutil import first_bookable_date, format_date, format_time, venue_today
 
 router = APIRouter()
 
 
-class SlotOut(BaseModel):
-    id: int
+class DayOut(BaseModel):
     date: str
     day_label: str
-    time_label: str
-    starts_at: datetime
     status: str
+    slot_id: int | None
+    time_label: str | None
+    starts_at: datetime | None
 
 
 class AvailabilityOut(BaseModel):
     today: str
     first_bookable_date: str
-    slots: list[SlotOut]
+    weekend_default: str
+    days: list[DayOut]
 
 
-def slot_out(view: SlotView) -> SlotOut:
-    return SlotOut(
-        id=view.id,
+def day_out(view: DayView) -> DayOut:
+    return DayOut(
         date=view.local_date.isoformat(),
-        day_label=format_day(view.starts_at),
-        time_label=format_time(view.starts_at),
-        starts_at=view.starts_at,
+        day_label=format_date(view.local_date),
         status=view.status,
+        slot_id=view.slot_id,
+        time_label=format_time(view.starts_at) if view.starts_at else None,
+        starts_at=view.starts_at,
     )
 
 
@@ -42,9 +43,10 @@ def slot_out(view: SlotView) -> SlotOut:
 def get_availability(db: Session = Depends(get_db)) -> AvailabilityOut:
     settings = get_settings()
     today = venue_today(datetime.now(UTC))
-    views = availability(db, today, settings.min_lead_days, settings.weekends_ahead)
+    views = availability(db, today, settings.min_lead_days, settings.weekends_ahead, settings.weekend_default)
     return AvailabilityOut(
         today=today.isoformat(),
         first_bookable_date=first_bookable_date(today, settings.min_lead_days).isoformat(),
-        slots=[slot_out(view) for view in views],
+        weekend_default=settings.weekend_default,
+        days=[day_out(view) for view in views],
     )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, time
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -84,3 +84,25 @@ class HoldStatusOut(BaseModel):
 class BookingOut(BaseModel):
     status: str
     party: PartyDetails
+
+
+class RequestCreate(BaseModel):
+    date: date
+    preferred_time: time
+    package: str
+    kids: int
+    addons: dict[str, int] = Field(default_factory=dict)
+    first_name: str = Field(min_length=1, max_length=60)
+    last_name: str = Field(min_length=1, max_length=60)
+    phone: str = Field(min_length=7, max_length=30)
+    email: EmailStr
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class RequestOut(BaseModel):
+    request_id: int
+    day_label: str
+    time_label: str
+    package_label: str
+    kids: int
+    total_cents: int

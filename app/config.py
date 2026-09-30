@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:8000"
     serve_frontend: bool = False
     min_lead_days: int = 2
+    weekend_default: Literal["open", "request"] = "open"
     weekends_ahead: int = 8
     admin_password: str = ""
     session_secret: str = ""

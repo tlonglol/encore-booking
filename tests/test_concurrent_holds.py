@@ -34,7 +34,7 @@ def test_concurrent_holds(db: Session) -> None:
         if response.status_code == 409:
             alternatives = response.json()["alternatives"]
             assert alternatives, "the loser is offered other dates"
-            assert slot.id not in {alt["id"] for alt in alternatives}
+            assert slot.id not in {alt["slot_id"] for alt in alternatives}
             assert {alt["status"] for alt in alternatives} == {"open"}
     active = db.scalar(select(func.count()).select_from(Hold).where(Hold.slot_id == slot.id, Hold.status == "pending_payment"))
     assert active == 1

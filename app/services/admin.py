@@ -102,3 +102,15 @@ def list_notifications(db: Session, limit: int = 100) -> list[Row]:
             {"limit": limit},
         )
     )
+
+
+def list_requests(db: Session) -> list[Row]:
+    return list(
+        db.execute(
+            text(
+                "SELECT id, local_date, preferred_time, status, package, kids, addons, total_cents,"
+                " deposit_cents, first_name, last_name, phone, email, notes, created_at"
+                " FROM requests ORDER BY status <> 'new', created_at DESC"
+            )
+        )
+    )

@@ -1,9 +1,10 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Time,
     CheckConstraint,
     Date,
     DateTime,
@@ -22,6 +23,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 HOLD_STATUSES = ("pending_payment", "booked", "paid_after_expiry", "expired", "cancelled")
 ACTIVE_HOLD_STATUSES = ("pending_payment", "booked")
 PACKAGES = ("standard", "plus", "premium")
+REQUEST_STATUSES = ("new", "approved", "declined", "expired", "converted")
 FLAG_KINDS = ("paid_after_expiry", "amount_mismatch", "unmatched_order", "duplicate_payment")
 EVENT_OUTCOMES = ("booked", "duplicate", "duplicate_payment", "expired_hold", "unmatched", "amount_mismatch")
 
@@ -135,6 +137,55 @@ class Booking(Base):
     cancel_reason: Mapped[str | None] = mapped_column(Text)
 
 
+class PartyRequest(Base):
+    """A weekday (or request-mode weekend) party inquiry. No hold, no payment; the owner follows up."""
+
+    __tablename__ = "requests"
+    __table_args__ = (
+        CheckConstraint(_in("status", REQUEST_STATUSES), name="requests_status_valid"),
+        CheckConstraint(_in("package", PACKAGES), name="requests_package_valid"),
+        CheckConstraint("kids BETWEEN 1 AND 30", name="requests_kids_range"),
+        CheckConstraint("total_cents >= 0", name="requests_total_positive"),
+        # One open request per parent per date, by phone and by email.
+        Index(
+            "requests_one_new_per_phone_date",
+            "phone",
+            "local_date",
+            unique=True,
+            postgresql_where=text("status = 'new'"),
+        ),
+        Index(
+            "requests_one_new_per_email_date",
+            "email",
+            "local_date",
+            unique=True,
+            postgresql_where=text("status = 'new'"),
+        ),
+        Index("requests_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    local_date: Mapped[date] = mapped_column(Date)
+    preferred_time: Mapped[time] = mapped_column(Time)
+    status: Mapped[str] = mapped_column(Text, default="new", server_default=text("'new'"))
+    package: Mapped[str] = mapped_column(Text)
+    kids: Mapped[int] = mapped_column(SmallInteger)
+    addons: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    line_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    total_cents: Mapped[int] = mapped_column(Integer)
+    deposit_cents: Mapped[int] = mapped_column(Integer)
+    first_name: Mapped[str] = mapped_column(Text)
+    last_name: Mapped[str] = mapped_column(Text)
+    phone: Mapped[str] = mapped_column(Text)
+    email: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    client_ip: Mapped[str | None] = mapped_column(INET)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SquareEvent(Base):
     __tablename__ = "square_events"
     __table_args__ = (CheckConstraint(_in("outcome", EVENT_OUTCOMES), name="square_events_outcome_valid"),)
@@ -170,12 +221,22 @@ class Notification(Base):
         CheckConstraint(
             "status IN ('pending', 'sent', 'failed', 'logged')", name="notifications_status_valid"
         ),
-        # A hold's outcome is announced at most once per audience and channel.
+        # A hold's or request's outcome is announced at most once per audience and channel.
         Index("notifications_once_per_hold", "hold_id", "audience", "channel", unique=True),
+        Index(
+            "notifications_once_per_request",
+            "request_id",
+            "audience",
+            "channel",
+            unique=True,
+            postgresql_where=text("request_id IS NOT NULL"),
+        ),
+        CheckConstraint("(hold_id IS NULL) <> (request_id IS NULL)", name="notifications_one_subject"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    hold_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("holds.id"))
+    hold_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("holds.id"))
+    request_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("requests.id"))
     booking_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("bookings.id"))
     audience: Mapped[str] = mapped_column(Text)
     channel: Mapped[str] = mapped_column(Text)
