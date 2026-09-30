@@ -3,17 +3,35 @@ from collections.abc import Iterator
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import Engine, create_engine, text
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-DEFAULT_TEST_URL = "postgresql+psycopg://encore:encore@localhost:5433/encore_test"
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_URL)
+
+class _TestDatabase(BaseSettings):
+    """Reads only TEST_DATABASE_URL, from the environment or .env."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    test_database_url: str
+
+
+TEST_DATABASE_URL = _TestDatabase().test_database_url
 
 if urlsplit(TEST_DATABASE_URL).hostname not in {"localhost", "127.0.0.1", "db", "postgres"}:
     raise RuntimeError("TEST_DATABASE_URL must be a local database: the test suite truncates every table.")
 
-# The app under test only ever sees the test database.
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+# The app under test never reads .env, so real credentials in it cannot reach a test run.
+os.environ["ENCORE_ENV_FILE"] = os.devnull
+TEST_ENV = {
+    "DATABASE_URL": TEST_DATABASE_URL,
+    "FRONTEND_ORIGIN": "http://testserver",
+    "SERVE_FRONTEND": "false",
+    "MIN_LEAD_DAYS": "2",
+    "WEEKENDS_AHEAD": "8",
+    "ADMIN_PASSWORD": "test-admin-password",
+    "SESSION_SECRET": "test-session-secret",
+}
+os.environ.update(TEST_ENV)
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -24,12 +42,7 @@ from app.db import get_engine  # noqa: E402
 TABLES = ("notifications", "payment_flags", "square_events", "bookings", "holds", "slots")
 
 
-def _migrate_from_scratch(url: str) -> None:
-    engine = create_engine(url)
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-    engine.dispose()
+def _migrate(url: str) -> None:
     config = Config("alembic.ini")
     config.attributes["database_url"] = url
     command.upgrade(config, "head")
@@ -39,7 +52,7 @@ def _migrate_from_scratch(url: str) -> None:
 def migrated_database() -> Iterator[None]:
     get_settings.cache_clear()
     get_engine.cache_clear()
-    _migrate_from_scratch(TEST_DATABASE_URL)
+    _migrate(TEST_DATABASE_URL)
     yield
     get_engine().dispose()
 
