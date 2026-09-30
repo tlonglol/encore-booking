@@ -315,37 +315,72 @@ section { margin-top: 3rem; }
 .addon.on .toggle { background: var(--blue); border-color: var(--blue); }
 .addon.on .toggle::after { transform: translateX(18px); background: #fff; }
 
-/* Slots */
-.weekend { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
-.slot {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.9rem 1rem;
-  text-align: left;
-  min-height: 86px;
-  transition: border-color 0.2s;
-}
-.slot .day { font-family: var(--display); font-size: 24px; letter-spacing: 0.04em; line-height: 1; }
-.slot .time { font-size: 13px; color: var(--gray-light); margin-top: 2px; }
-.slot .state {
-  display: inline-block;
-  margin-top: 8px;
+/* Calendar */
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 1rem;
   font-family: var(--condensed);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--gray-light);
 }
-.slot.open .state { color: var(--ok); }
-.slot.open:hover { border-color: var(--border-blue); }
-.slot.held .state, .slot.booked .state { color: var(--warn); }
-.slot.blocked .state, .slot.past .state { color: var(--gray); }
-.slot.held, .slot.booked, .slot.blocked, .slot.past { background: var(--dark); }
-.slot.held .day, .slot.booked .day, .slot.blocked .day, .slot.past .day { color: var(--gray); }
-.slot.selected { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), 0 0 24px var(--blue-glow); }
-.slot.selected .state { color: var(--blue-light); }
-.slot-placeholder { visibility: hidden; }
+.cal-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.cal-month { margin-bottom: 1.5rem; }
+.cal-month-label {
+  font-family: var(--condensed);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray-light);
+  margin-bottom: 8px;
+}
+.cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-head {
+  font-family: var(--condensed);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray);
+  text-align: center;
+  margin-bottom: 6px;
+}
+.cal-grid { margin-bottom: 6px; }
+.cal-day {
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--white);
+  font-family: var(--condensed);
+  font-size: 17px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+.cal-day .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gray); }
+.dot.open { background: var(--ok); }
+.dot.held, .dot.booked { background: var(--warn); }
+.dot.blocked, .dot.past { background: #3a3a3a; }
+.dot.request { background: var(--blue-light); }
+.cal-day.open { border-color: var(--border-blue); }
+.cal-day.open:hover { border-color: var(--blue); }
+.cal-day.request { border-style: dashed; color: var(--gray-light); }
+.cal-day.request:hover { border-color: var(--blue); }
+.cal-day.held, .cal-day.booked, .cal-day.blocked, .cal-day.past { background: var(--dark); color: var(--gray); }
+.cal-day.selected { background: var(--blue); border-color: var(--blue); border-style: solid; color: #fff; box-shadow: 0 0 20px var(--blue-glow); }
+.cal-day.selected .dot { background: #fff; }
+.cal-pad { visibility: hidden; }
 
 /* Notices */
 .notice {
@@ -401,6 +436,19 @@ section { margin-top: 3rem; }
   color: var(--gray-light);
   margin-bottom: 6px;
 }
+.field select {
+  width: 100%;
+  background: var(--black);
+  border: 1px solid #2a3a50;
+  border-radius: 6px;
+  padding: 14px 16px;
+  color: var(--white);
+  font-family: var(--body);
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field select:focus { outline: none; border-color: var(--blue-light); }
 .field input, .field textarea {
   width: 100%;
   background: var(--black);
@@ -612,7 +660,6 @@ section { margin-top: 3rem; }
   .form-grid { grid-template-columns: 1fr 1fr; }
   .addon-grid { grid-template-columns: 1fr 1fr; }
   .book-panel { padding: 3rem 2.5rem; }
-  .weekends { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.75rem; }
 }
 @media (min-width: 900px) {
   .pkg-grid { grid-template-columns: repeat(3, 1fr); }

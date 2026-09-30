@@ -19,15 +19,16 @@
       drinks_pack: ["🥤", "Soda + juice boxes for the whole group."],
     },
   };
-  const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Too soon" };
+  const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "Request only" };
 
   const state = {
     catalog: null,
     packageKey: "standard",
     kids: 15,
     addons: {},
-    slots: [],
-    slotId: null,
+    days: [],
+    weekendDefault: "open",
+    selectedDate: null,
     quote: null,
     quoteSeq: 0,
     hold: null,
@@ -257,59 +258,85 @@
     );
   }
 
-  // ---------- Slots ----------
-  async function loadSlots() {
+  // ---------- Calendar ----------
+  const DOW_HEAD = ["M", "T", "W", "T", "F", "S", "S"];
+
+  function selectedDay() {
+    return state.days.find((d) => d.date === state.selectedDate) || null;
+  }
+
+  function jsDate(day) {
+    return new Date(day.date + "T12:00:00");
+  }
+
+  async function loadCalendar() {
     const { status, data } = await api("/api/availability");
     if (status !== 200) {
       $("slots").replaceChildren(el("p", { class: "notice error", text: detailText(data, "Couldn't load dates. Refresh to try again.") }));
       return;
     }
-    state.slots = data.slots;
-    if (state.slotId && !state.slots.some((s) => s.id === state.slotId && s.status === "open")) state.slotId = null;
-    renderSlots();
+    state.days = data.days;
+    state.weekendDefault = data.weekend_default;
+    const day = selectedDay();
+    if (state.selectedDate && (!day || (day.status !== "open" && day.status !== "request"))) {
+      state.selectedDate = null;
+      if (day) showSlotNotice(`${day.day_label} just became unavailable. Pick another date.`, nextOpenAfter(day), true);
+    }
+    renderLegend();
+    renderCalendar();
     renderSummary();
   }
 
-  function weekendKey(slot) {
-    const d = new Date(slot.date + "T12:00:00");
-    if (d.getDay() === 0) d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+  function renderLegend() {
+    const entries = [["open", "Open"], ["held", "On hold"], ["booked", "Booked"], ["blocked", "Unavailable"]];
+    entries.push(["request", state.weekendDefault === "request" ? "Request only" : "Weekdays: request only"]);
+    $("cal-legend").replaceChildren(
+      ...entries.map(([key, label]) => el("span", {}, [el("span", { class: `dot ${key}`, "aria-hidden": "true" }), label]))
+    );
   }
 
-  function renderSlots() {
-    const groups = new Map();
-    state.slots.forEach((slot) => {
-      const key = weekendKey(slot);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(slot);
+  function renderCalendar() {
+    const months = new Map();
+    state.days.forEach((day) => {
+      const key = day.date.slice(0, 7);
+      if (!months.has(key)) months.set(key, []);
+      months.get(key).push(day);
     });
-    const rows = [];
-    groups.forEach((slots) => {
-      const cells = slots.map((slot) =>
-        el(
-          "button",
-          {
-            type: "button",
-            class: `slot ${slot.status}` + (slot.id === state.slotId ? " selected" : ""),
-            "aria-pressed": String(slot.id === state.slotId),
-            "aria-label": `${slot.day_label} ${slot.time_label}, ${STATUS_TEXT[slot.status]}`,
-            onclick: () => pickSlot(slot),
-          },
-          [
-            el("div", { class: "day", text: slot.day_label }),
-            el("div", { class: "time", text: slot.time_label }),
-            el("span", { class: "state", text: slot.id === state.slotId ? "Selected" : STATUS_TEXT[slot.status] }),
-          ]
-        )
+    const sections = [];
+    months.forEach((days) => {
+      const first = jsDate(days[0]);
+      const cells = [];
+      for (let pad = (first.getDay() + 6) % 7; pad > 0; pad--) cells.push(el("div", { class: "cal-day cal-pad" }));
+      days.forEach((day) => {
+        const selected = day.date === state.selectedDate;
+        const label = selected ? "Selected" : STATUS_TEXT[day.status];
+        cells.push(
+          el(
+            "button",
+            {
+              type: "button",
+              class: `cal-day ${day.status}` + (selected ? " selected" : ""),
+              "aria-pressed": String(selected),
+              "aria-label": `${day.day_label}${day.time_label ? ` ${day.time_label}` : ""}, ${label}`,
+              onclick: () => pickDate(day),
+            },
+            [String(jsDate(day).getDate()), el("span", { class: `dot ${day.status}`, "aria-hidden": "true" })]
+          )
+        );
+      });
+      sections.push(
+        el("div", { class: "cal-month" }, [
+          el("div", { class: "cal-month-label", text: first.toLocaleDateString("en-US", { month: "long", year: "numeric" }) }),
+          el("div", { class: "cal-head", "aria-hidden": "true" }, DOW_HEAD.map((d) => el("span", { text: d }))),
+          el("div", { class: "cal-grid" }, cells),
+        ])
       );
-      if (cells.length === 1 && new Date(slots[0].date + "T12:00:00").getDay() === 0) cells.unshift(el("div", { class: "slot slot-placeholder" }));
-      rows.push(el("div", { class: "weekend" }, cells));
     });
-    $("slots").replaceChildren(...rows);
+    $("slots").replaceChildren(...sections);
   }
 
-  function nextOpenAfter(slot) {
-    return state.slots.filter((s) => s.status === "open" && s.date > slot.date).slice(0, 2);
+  function nextOpenAfter(day) {
+    return state.days.filter((d) => d.status === "open" && d.date > day.date).slice(0, 2);
   }
 
   function showSlotNotice(message, alternatives, isError) {
@@ -319,7 +346,12 @@
       return;
     }
     const alts = (alternatives || []).map((alt) =>
-      el("button", { type: "button", class: "chip", onclick: () => pickSlot(alt), text: `${alt.day_label} ${alt.time_label}` })
+      el("button", {
+        type: "button",
+        class: "chip",
+        onclick: () => pickDate(state.days.find((d) => d.date === alt.date) || alt),
+        text: `${alt.day_label}${alt.time_label ? ` ${alt.time_label}` : ""}`,
+      })
     );
     notice.replaceChildren(
       el("div", { class: "notice" + (isError ? " error" : "") }, [
@@ -330,34 +362,52 @@
     notice.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  function pickSlot(slot) {
-    const current = state.slots.find((s) => s.id === slot.id) || slot;
-    if (current.status !== "open") {
-      if (current.status === "past") {
-        showSlotNotice(`${current.day_label} is too soon to book online. Call (646) 203-8087 and we'll see what we can do.`, nextOpenAfter(current));
-      } else {
-        const alts = nextOpenAfter(current);
-        showSlotNotice(`${current.day_label} is ${STATUS_TEXT[current.status].toLowerCase()}. ${alts.length ? "Next open:" : "No later dates are open right now."}`, alts);
-      }
+  function pickDate(day) {
+    const current = state.days.find((d) => d.date === day.date) || day;
+    if (current.status === "open" || current.status === "request") {
+      state.selectedDate = current.date;
+      showSlotNotice(null);
+      renderCalendar();
+      renderSummary();
+      $("details-panel").scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    state.slotId = current.id;
-    showSlotNotice(null);
-    renderSlots();
-    renderSummary();
-    $("details-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    const alts = nextOpenAfter(current);
+    const nextOpen = alts.length ? "Next open:" : "No open weekend dates right now.";
+    if (current.status === "held") {
+      showSlotNotice(`${current.day_label} is on hold for another family. It may free up in a few minutes, and this page checks again on its own. ${nextOpen}`, alts);
+    } else if (current.status === "booked") {
+      showSlotNotice(`${current.day_label} is booked. ${nextOpen}`, alts);
+    } else {
+      showSlotNotice(`${current.day_label} isn't available online. Call (646) 203-8087 if you need that date. ${nextOpen}`, alts);
+    }
+  }
+
+  function requestMode() {
+    const day = selectedDay();
+    return Boolean(day && day.status === "request");
   }
 
   function renderSummary() {
-    const slot = state.slots.find((s) => s.id === state.slotId);
+    const day = selectedDay();
+    const requesting = requestMode();
+    $("hold-button").disabled = !day || !state.quote;
+    $("time-field").hidden = !requesting;
+    $("fine-hold").hidden = requesting;
+    $("fine-request").hidden = !requesting;
+    $("book-title").textContent = requesting ? "Request this date" : "Hold your date";
+    $("book-sub").textContent = requesting
+      ? "Weekday parties are by request. Send it and we'll text you back to confirm — no payment now."
+      : "Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time.";
+    $("hold-button").textContent = requesting ? "Send request" : "Hold my date";
     const line = $("summary-line");
-    $("hold-button").disabled = !slot || !state.quote;
-    if (!slot) {
+    if (!day) {
       line.textContent = "Pick a date above";
       return;
     }
     line.replaceChildren(
-      el("b", { text: `${pkg(state.packageKey).label} · ${slot.day_label} ${slot.time_label}` }),
+      requesting ? "Request · " : "",
+      el("b", { text: `${pkg(state.packageKey).label} · ${day.day_label}${day.time_label ? ` ${day.time_label}` : ""}` }),
       ` · ${state.kids} kids · `,
       el("b", { text: state.quote ? money(state.quote.total_cents) : "…" })
     );
@@ -376,8 +426,8 @@
     event.preventDefault();
     formError(null);
     const form = event.target;
-    const slot = state.slots.find((s) => s.id === state.slotId);
-    if (!slot) {
+    const day = selectedDay();
+    if (!day) {
       formError("Pick a date first.");
       return;
     }
@@ -390,11 +440,16 @@
     }
     const button = $("hold-button");
     button.disabled = true;
+    if (requestMode()) {
+      button.textContent = "Sending…";
+      await submitRequest(day, values, button);
+      return;
+    }
     button.textContent = "Holding your date…";
     const { status, data } = await api("/api/holds", {
       method: "POST",
       body: {
-        slot_id: slot.id,
+        slot_id: day.slot_id,
         package: state.packageKey,
         kids: state.kids,
         addons: state.addons,
@@ -412,17 +467,51 @@
     }
     button.disabled = false;
     if (status === 409) {
-      state.slotId = null;
-      await loadSlots();
+      state.selectedDate = null;
+      await loadCalendar();
       const alts = data.alternatives || [];
-      showSlotNotice(`Sorry, ${slot.day_label} was just taken. ${alts.length ? "These are still open:" : "No other dates are open right now."}`, alts, true);
+      showSlotNotice(`Sorry, ${day.day_label} was just taken. ${alts.length ? "These are still open:" : "No other dates are open right now."}`, alts, true);
       return;
     }
     if (status === 429 && data && data.expires_at) {
       formError(`${detailText(data)} It's held until ${localTime(data.expires_at)}. Finish that checkout, or try again after it expires.`);
       return;
     }
-    if (status === 422 || status === 404) await loadSlots();
+    if (status === 422 || status === 404) await loadCalendar();
+    formError(detailText(data));
+  }
+
+  async function submitRequest(day, values, button) {
+    const { status, data } = await api("/api/requests", {
+      method: "POST",
+      body: {
+        date: day.date,
+        preferred_time: $("preferred_time").value,
+        package: state.packageKey,
+        kids: state.kids,
+        addons: state.addons,
+        first_name: values.first_name.trim(),
+        last_name: values.last_name.trim(),
+        phone: values.phone.trim(),
+        email: values.email.trim(),
+        notes: String(values.notes || "").trim() || null,
+      },
+    });
+    button.textContent = "Send request";
+    if (status === 201) {
+      $("builder").hidden = true;
+      $("details-panel").hidden = true;
+      $("request-done").hidden = false;
+      $("request-summary").replaceChildren(
+        el("b", { text: `${data.package_label} · ${data.day_label} at ${data.time_label}` }),
+        ` · ${data.kids} kids · `,
+        el("b", { text: money(data.total_cents) })
+      );
+      $("request-done").scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    button.disabled = false;
+    if (status === 422) await loadCalendar();
     formError(detailText(data));
   }
 
@@ -508,10 +597,13 @@
     renderKids();
     renderAddons();
     requestQuote();
-    loadSlots();
+    loadCalendar();
     setInterval(() => {
-      if (!state.hold && document.visibilityState === "visible") loadSlots();
+      if (!state.hold && document.visibilityState === "visible") loadCalendar();
     }, 30000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !state.hold) loadCalendar();
+    });
   }
 
   boot();

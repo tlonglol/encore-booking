@@ -55,27 +55,47 @@
 
     <section aria-labelledby="date-label">
       <div class="section-label" id="date-label">Pick a date</div>
+      <div class="cal-legend" id="cal-legend"></div>
       <div id="slot-notice" class="slot-notice" aria-live="polite"></div>
-      <div id="slots" class="weekends"><p class="muted">Loading open dates…</p></div>
+      <div id="slots"><p class="muted">Loading dates…</p></div>
     </section>
     </div>
 
     <section class="book-panel" id="details-panel" aria-labelledby="book-title">
       <h2 class="book-title" id="book-title">Hold your date</h2>
-      <p class="book-sub">Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time.</p>
+      <p class="book-sub" id="book-sub">Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time.</p>
       <p class="summary-line" id="summary-line">Pick a date above</p>
       <form id="hold-form" class="form-grid" novalidate>
         <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" autocomplete="given-name" placeholder="First name" required maxlength="60"></div>
         <div class="field"><label for="last_name">Last name</label><input id="last_name" name="last_name" autocomplete="family-name" placeholder="Last name" required maxlength="60"></div>
         <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
+        <div class="field" id="time-field" hidden><label for="preferred_time">Preferred start time</label>
+          <select id="preferred_time" name="preferred_time">
+            <option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option>
+            <option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option>
+            <option value="13:00">1:00 PM</option><option value="14:00">2:00 PM</option>
+            <option value="15:00">3:00 PM</option><option value="16:00" selected>4:00 PM</option>
+            <option value="17:00">5:00 PM</option><option value="18:00">6:00 PM</option>
+            <option value="19:00">7:00 PM</option><option value="20:00">8:00 PM</option>
+          </select>
+        </div>
         <div class="field full"><label for="notes">Notes (optional)</label><textarea id="notes" name="notes" maxlength="1000" placeholder="Allergies, the birthday kid's name, questions…"></textarea></div>
         <div class="field full">
           <button class="btn btn-primary btn-block" id="hold-button" type="submit" disabled>Hold my date</button>
           <div id="form-error" role="alert"></div>
         </div>
       </form>
-      <p class="fine">$100 deposit holds your date · Balance due day of event · 7+ days notice for full refund · (646) 203-8087</p>
+      <p class="fine" id="fine-hold">$100 deposit holds your date · Balance due day of event · 7+ days notice for full refund · (646) 203-8087</p>
+      <p class="fine" id="fine-request" hidden>No payment to send a request · Nothing is booked until we confirm with you · (646) 203-8087</p>
+    </section>
+
+    <section class="book-panel hold-panel" id="request-done" hidden aria-live="polite">
+      <p class="hold-caption">Request sent</p>
+      <h2 class="book-title">We'll text you</h2>
+      <p class="summary-line" id="request-summary"></p>
+      <p class="book-sub">No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087.</p>
+      <a class="btn btn-ghost" href="index.html">Back to the calendar</a>
     </section>
 
     <section class="book-panel hold-panel" id="hold-panel" hidden aria-live="polite">

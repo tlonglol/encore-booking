@@ -84,6 +84,29 @@
     );
   }
 
+  async function requests() {
+    const { status, data } = await guarded("/api/admin/requests");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("No party requests yet."));
+    panel.replaceChildren(
+      ...data.map((r) =>
+        el("article", { class: "card" + (r.status === "new" ? " flagged" : "") }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${r.day_label} · ${r.time_label}` }),
+            el("span", { class: "pill" + (r.status === "new" ? " warn" : ""), text: r.status }),
+          ]),
+          el("div", { class: "card-meta" }, [el("b", { text: `${r.package} · ${r.kids} kids` }), ` · ${r.addons}`]),
+          el("div", { class: "card-meta" }, ["Quoted ", el("b", { text: money(r.total_cents) }), " · deposit would be ", el("b", { text: money(r.deposit_cents) })]),
+          el("div", { class: "card-meta" }, [
+            el("b", { text: r.name }), " · ", el("a", { href: `tel:${r.phone}`, text: r.phone }), " · ", el("a", { href: `mailto:${r.email}`, text: r.email }),
+          ]),
+          r.notes ? el("div", { class: "body-text", text: `Notes: ${r.notes}` }) : null,
+          el("div", { class: "card-meta small muted", text: `Requested ${when(r.created_at)} · call or text the parent to confirm` }),
+        ])
+      )
+    );
+  }
+
   async function flags() {
     const { status, data } = await guarded("/api/admin/flags");
     if (status !== 200) return status === 401 ? null : problem(data);
@@ -123,9 +146,10 @@
   async function dates() {
     const { status, data } = await api("/api/availability");
     if (status !== 200) return problem(data);
+    const slotDays = data.days.filter((s) => s.slot_id !== null);
     panel.replaceChildren(
-      ...data.slots.map((s) => {
-        const canBlock = s.status === "open" || s.status === "past";
+      ...slotDays.map((s) => {
+        const canBlock = s.status === "open" || s.status === "past" || s.status === "request";
         return el("article", { class: "card" }, [
           el("div", { class: "card-head" }, [
             el("div", { class: "card-title", text: `${s.day_label} · ${s.time_label}` }),
@@ -133,9 +157,9 @@
           ]),
           el("div", { class: "card-actions" }, [
             s.status === "blocked"
-              ? el("button", { type: "button", class: "btn btn-ghost btn-sm", text: "Unblock", onclick: () => setBlocked(s.id, false) })
+              ? el("button", { type: "button", class: "btn btn-ghost btn-sm", text: "Unblock", onclick: () => setBlocked(s.slot_id, false) })
               : canBlock
-                ? el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Block date", onclick: () => setBlocked(s.id, true) })
+                ? el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Block date", onclick: () => setBlocked(s.slot_id, true) })
                 : el("span", { class: "muted small", text: "Held or booked: cancel the booking before blocking." }),
           ]),
         ]);
@@ -172,14 +196,20 @@
     );
   }
 
-  const TABS = { bookings, flags, dates, notifications };
+  const TABS = { bookings, requests, flags, dates, notifications };
 
   async function counts() {
-    const [flagRes, noteRes] = await Promise.all([api("/api/admin/flags"), api("/api/admin/notifications")]);
+    const [flagRes, noteRes, reqRes] = await Promise.all([
+      api("/api/admin/flags"),
+      api("/api/admin/notifications"),
+      api("/api/admin/requests"),
+    ]);
     const openFlags = flagRes.status === 200 ? flagRes.data.filter((f) => !f.resolved_at).length : 0;
     const failed = noteRes.status === 200 ? noteRes.data.filter((n) => n.status === "failed").length : 0;
+    const fresh = reqRes.status === 200 ? reqRes.data.filter((r) => r.status === "new").length : 0;
     $("flag-count").textContent = openFlags ? ` ${openFlags}` : "";
     $("failed-count").textContent = failed ? ` ${failed} failed` : "";
+    $("request-count").textContent = fresh ? ` ${fresh}` : "";
   }
 
   function show(tab) {
