@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <meta name="robots" content="noindex">
+  <title>Admin · Encore Parties</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/encore.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="nav-logo" href="index.html">ENCORE <span>ADMIN</span></a>
+    <button class="nav-cta" id="logout" type="button" hidden>Log out</button>
+  </nav>
+  <main class="wrap">
+    <form class="login" id="login" hidden>
+      <h1 class="book-title">Owner login</h1>
+      <div class="field" style="margin-top:1.5rem"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+      <button class="btn btn-primary btn-block" type="submit" style="margin-top:1rem">Log in</button>
+      <div id="login-error" role="alert"></div>
+    </form>
+
+    <div id="dashboard" hidden>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="bookings" aria-selected="true">Bookings</button>
+        <button class="tab" role="tab" data-tab="flags" aria-selected="false">Payment flags<span class="count" id="flag-count"></span></button>
+        <button class="tab" role="tab" data-tab="dates" aria-selected="false">Dates</button>
+        <button class="tab" role="tab" data-tab="notifications" aria-selected="false">Messages<span class="count" id="failed-count"></span></button>
+      </div>
+      <div id="panel" class="cards" aria-live="polite"></div>
+    </div>
+  </main>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

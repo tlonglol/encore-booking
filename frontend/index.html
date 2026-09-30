@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>Book a Party · Encore Esports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/encore.css">
+</head>
+<body class="has-quote-bar">
+  <nav class="nav">
+    <a class="nav-logo" href="https://encoregaming.us">ENCORE <span>ESPORTS</span></a>
+    <a class="nav-cta" href="tel:+16462038087">(646) 203-8087</a>
+  </nav>
+
+  <main class="wrap">
+    <header class="hero">
+      <p class="hero-eyebrow">538 Main St · New Rochelle, NY</p>
+      <h1 class="hero-title"><span class="line1">Book their</span><span class="line2">birthday</span></h1>
+      <p class="hero-sub">Pick a package, see your price, and lock your date with a $100 deposit. The rest is due the day of the party.</p>
+      <div class="badges">
+        <span class="badge badge-blue">Sat &amp; Sun mornings</span>
+        <span class="badge badge-white">Private venue buyout</span>
+        <span class="badge badge-blue">Dedicated host</span>
+        <span class="badge badge-white">Ages 6+</span>
+      </div>
+    </header>
+
+    <div id="builder">
+    <section aria-labelledby="pkg-label">
+      <div class="section-label" id="pkg-label">Choose your package</div>
+      <div class="pkg-grid" id="packages" role="radiogroup" aria-labelledby="pkg-label"></div>
+    </section>
+
+    <section aria-labelledby="kids-label">
+      <div class="section-label" id="kids-label">How many kids</div>
+      <div class="kids-row">
+        <div class="stepper" role="group" aria-label="Number of kids">
+          <button type="button" id="kids-minus" aria-label="One fewer kid">−</button>
+          <output id="kids-count" aria-live="polite">15</output>
+          <button type="button" id="kids-plus" aria-label="One more kid">+</button>
+        </div>
+        <p class="kids-note" id="kids-note"></p>
+      </div>
+    </section>
+
+    <section aria-labelledby="addons-label">
+      <div class="section-label" id="addons-label">Add-ons</div>
+      <div class="addon-grid" id="addons"></div>
+    </section>
+
+    <section aria-labelledby="date-label">
+      <div class="section-label" id="date-label">Pick a date</div>
+      <div id="slot-notice" class="slot-notice" aria-live="polite"></div>
+      <div id="slots" class="weekends"><p class="muted">Loading open dates…</p></div>
+    </section>
+    </div>
+
+    <section class="book-panel" id="details-panel" aria-labelledby="book-title">
+      <h2 class="book-title" id="book-title">Hold your date</h2>
+      <p class="book-sub">Your date is held for 15 minutes while you pay the $100 deposit. Nobody else can take it in that time.</p>
+      <p class="summary-line" id="summary-line">Pick a date above</p>
+      <form id="hold-form" class="form-grid" novalidate>
+        <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" autocomplete="given-name" placeholder="First name" required maxlength="60"></div>
+        <div class="field"><label for="last_name">Last name</label><input id="last_name" name="last_name" autocomplete="family-name" placeholder="Last name" required maxlength="60"></div>
+        <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
+        <div class="field full"><label for="notes">Notes (optional)</label><textarea id="notes" name="notes" maxlength="1000" placeholder="Allergies, the birthday kid's name, questions…"></textarea></div>
+        <div class="field full">
+          <button class="btn btn-primary btn-block" id="hold-button" type="submit" disabled>Hold my date</button>
+          <div id="form-error" role="alert"></div>
+        </div>
+      </form>
+      <p class="fine">$100 deposit holds your date · Balance due day of event · 7+ days notice for full refund · (646) 203-8087</p>
+    </section>
+
+    <section class="book-panel hold-panel" id="hold-panel" hidden aria-live="polite">
+      <p class="hold-caption">Your date is held for</p>
+      <p class="countdown" id="countdown">15:00</p>
+      <p class="summary-line" id="hold-summary"></p>
+      <a class="btn btn-primary btn-block" id="pay-button" href="#">Pay $100 deposit</a>
+      <p class="fine">Secure checkout by Square. You'll come right back here for your confirmation.</p>
+      <p class="fine">Changed your mind? Do nothing: the hold releases itself when the timer runs out.</p>
+    </section>
+  </main>
+
+  <div class="quote-bar" id="quote-bar">
+    <div class="quote-inner">
+      <div class="quote-main">
+        <div class="quote-total" id="quote-total">—</div>
+        <div class="quote-split" id="quote-split">Total</div>
+        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines">Details</button>
+      </div>
+      <ul class="quote-lines" id="quote-lines" hidden></ul>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/book.js"></script>
+</body>
+</html>

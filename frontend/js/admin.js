@@ -1,0 +1,231 @@
+(function () {
+  const { api, detailText, money, el } = window.Encore;
+  const $ = (id) => document.getElementById(id);
+  const panel = $("panel");
+  let current = "bookings";
+
+  const FLAG_TEXT = {
+    paid_after_expiry: "Paid after hold expired: call parent",
+    duplicate_payment: "Second payment on a booked order: refund in Square",
+    amount_mismatch: "Paid the wrong amount: check in Square",
+    unmatched_order: "Payment with no matching hold: check in Square",
+  };
+
+  function when(iso) {
+    return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  function empty(text) {
+    return el("p", { class: "muted", text });
+  }
+
+  function problem(data) {
+    panel.replaceChildren(el("p", { class: "notice error", text: detailText(data) }));
+  }
+
+  async function guarded(path, options) {
+    const result = await api(path, options);
+    if (result.status === 401) showLogin();
+    return result;
+  }
+
+  function confirmButton(label, confirmLabel, action) {
+    const button = el("button", { type: "button", class: "btn btn-danger btn-sm", text: label });
+    let armed = false;
+    button.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        button.textContent = confirmLabel;
+        setTimeout(() => {
+          armed = false;
+          button.textContent = label;
+        }, 4000);
+        return;
+      }
+      button.disabled = true;
+      await action();
+    });
+    return button;
+  }
+
+  async function bookings() {
+    const { status, data } = await guarded("/api/admin/bookings");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("No bookings yet."));
+    panel.replaceChildren(
+      ...data.map((b) =>
+        el("article", { class: "card" + (b.cancelled_at ? " cancelled" : "") }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${b.day_label} · ${b.time_label}` }),
+            b.cancelled_at ? el("span", { class: "pill bad", text: "Cancelled" }) : el("span", { class: "pill ok", text: `Deposit ${b.deposit_status}` }),
+          ]),
+          el("div", { class: "card-meta" }, [el("b", { text: `${b.package} · ${b.kids} kids` }), ` · ${b.addons}`]),
+          el("div", { class: "card-meta" }, [
+            "Total ", el("b", { text: money(b.total_cents) }), " · deposit ", el("b", { text: money(b.paid_amount_cents) }),
+            " · balance due ", el("b", { text: money(b.balance_cents) }),
+          ]),
+          el("div", { class: "card-meta" }, [
+            el("b", { text: b.name }), " · ", el("a", { href: `tel:${b.phone}`, text: b.phone }), " · ", el("a", { href: `mailto:${b.email}`, text: b.email }),
+          ]),
+          b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
+          el("div", { class: "card-meta small muted", text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}` + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "") }),
+          el("div", { class: "card-actions" }, [
+            el("span", { class: "pill" + (b.full_refund ? " ok" : " warn"), text: b.full_refund ? "Full refund if cancelled" : "Inside 7 days: no automatic full refund" }),
+            b.cancelled_at
+              ? null
+              : confirmButton("Cancel booking", "Tap again to cancel", async () => {
+                  const result = await guarded(`/api/admin/bookings/${b.id}/cancel`, { method: "POST", body: { reason: "Cancelled by owner" } });
+                  if (result.status !== 200) return problem(result.data);
+                  bookings();
+                }),
+          ]),
+        ])
+      )
+    );
+  }
+
+  async function flags() {
+    const { status, data } = await guarded("/api/admin/flags");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("No payment flags. Every payment became a booking."));
+    panel.replaceChildren(
+      ...data.map((f) =>
+        el("article", { class: "card" + (f.resolved_at ? " cancelled" : " flagged") }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: FLAG_TEXT[f.kind] || f.kind }),
+            el("span", { class: "pill" + (f.resolved_at ? " ok" : " warn"), text: f.resolved_at ? "Resolved" : "Open" }),
+          ]),
+          f.name
+            ? el("div", { class: "card-meta" }, [el("b", { text: f.name }), " · ", el("a", { href: `tel:${f.phone}`, text: f.phone }), ` · ${f.email}`])
+            : null,
+          f.day_label ? el("div", { class: "card-meta", text: `Wanted ${f.day_label} ${f.time_label} · ${f.package} · ${f.kids} kids` }) : null,
+          el("div", { class: "card-meta small muted", text: `${f.amount_cents !== null ? money(f.amount_cents) : "?"} · Square payment ${f.square_payment_id} · ${when(f.created_at)}` }),
+          f.resolved_at
+            ? null
+            : el("div", { class: "card-actions" }, [
+                el("button", {
+                  type: "button",
+                  class: "btn btn-ghost btn-sm",
+                  text: "Mark resolved",
+                  onclick: async () => {
+                    const result = await guarded(`/api/admin/flags/${f.id}/resolve`, { method: "POST" });
+                    if (result.status !== 200) return problem(result.data);
+                    flags();
+                    counts();
+                  },
+                }),
+              ]),
+        ])
+      )
+    );
+  }
+
+  async function dates() {
+    const { status, data } = await api("/api/availability");
+    if (status !== 200) return problem(data);
+    panel.replaceChildren(
+      ...data.slots.map((s) => {
+        const canBlock = s.status === "open" || s.status === "past";
+        return el("article", { class: "card" }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${s.day_label} · ${s.time_label}` }),
+            el("span", { class: "pill" + (s.status === "open" ? " ok" : s.status === "blocked" ? " bad" : " warn"), text: s.status }),
+          ]),
+          el("div", { class: "card-actions" }, [
+            s.status === "blocked"
+              ? el("button", { type: "button", class: "btn btn-ghost btn-sm", text: "Unblock", onclick: () => setBlocked(s.id, false) })
+              : canBlock
+                ? el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Block date", onclick: () => setBlocked(s.id, true) })
+                : el("span", { class: "muted small", text: "Held or booked: cancel the booking before blocking." }),
+          ]),
+        ]);
+      })
+    );
+  }
+
+  async function setBlocked(slotId, blocked) {
+    const result = await guarded(`/api/admin/slots/${slotId}/${blocked ? "block" : "unblock"}`, { method: "POST" });
+    if (result.status !== 200 && result.status !== 401) {
+      await dates();
+      panel.prepend(el("p", { class: "notice error", text: detailText(result.data) }));
+      return;
+    }
+    dates();
+  }
+
+  async function notifications() {
+    const { status, data } = await guarded("/api/admin/notifications");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("No messages yet."));
+    panel.replaceChildren(
+      ...data.map((n) =>
+        el("article", { class: "card" + (n.status === "failed" ? " failed" : "") }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-meta" }, [el("b", { text: `${n.audience} · ${n.channel}` }), ` → ${n.recipient}`]),
+            el("span", { class: "pill" + (n.status === "sent" ? " ok" : n.status === "failed" ? " bad" : " warn"), text: n.status === "logged" ? "logged (no Twilio)" : n.status }),
+          ]),
+          n.error ? el("div", { class: "notice error", text: n.error }) : null,
+          el("div", { class: "body-text", text: n.body }),
+          el("div", { class: "card-meta small muted", text: when(n.created_at) }),
+        ])
+      )
+    );
+  }
+
+  const TABS = { bookings, flags, dates, notifications };
+
+  async function counts() {
+    const [flagRes, noteRes] = await Promise.all([api("/api/admin/flags"), api("/api/admin/notifications")]);
+    const openFlags = flagRes.status === 200 ? flagRes.data.filter((f) => !f.resolved_at).length : 0;
+    const failed = noteRes.status === 200 ? noteRes.data.filter((n) => n.status === "failed").length : 0;
+    $("flag-count").textContent = openFlags ? ` ${openFlags}` : "";
+    $("failed-count").textContent = failed ? ` ${failed} failed` : "";
+  }
+
+  function show(tab) {
+    current = tab;
+    document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    panel.replaceChildren(el("div", { class: "spinner", role: "status", "aria-label": "Loading" }));
+    TABS[tab]();
+  }
+
+  function showLogin() {
+    $("dashboard").hidden = true;
+    $("logout").hidden = true;
+    $("login").hidden = false;
+    $("password").focus();
+  }
+
+  function showDashboard() {
+    $("login").hidden = true;
+    $("dashboard").hidden = false;
+    $("logout").hidden = false;
+    show(current);
+    counts();
+  }
+
+  $("login").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("login-error").replaceChildren();
+    const { status, data } = await api("/api/admin/login", { method: "POST", body: { password: $("password").value } });
+    if (status === 200) {
+      $("password").value = "";
+      showDashboard();
+    } else {
+      $("login-error").replaceChildren(el("p", { class: "notice error", text: detailText(data, "Login failed.") }));
+    }
+  });
+  $("logout").addEventListener("click", async () => {
+    await api("/api/admin/logout", { method: "POST" });
+    showLogin();
+  });
+  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+  setInterval(() => {
+    if (!$("dashboard").hidden && document.visibilityState === "visible" && current !== "dates") {
+      TABS[current]();
+      counts();
+    }
+  }, 15000);
+
+  api("/api/admin/session").then(({ status }) => (status === 200 ? showDashboard() : showLogin()));
+})();

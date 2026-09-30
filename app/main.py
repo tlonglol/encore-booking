@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,9 @@ from mangum import Mangum
 
 from app.config import get_settings
 from app.routes import admin, availability, bookings, dev, holds, quote, webhooks
+
+# The console fallback for SMS logs at INFO; uvicorn leaves application loggers at WARNING otherwise.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 

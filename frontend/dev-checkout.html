@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Fake Checkout (dev only)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/encore.css">
+</head>
+<body>
+  <main class="wrap">
+    <div class="confirm">
+      <p class="hold-caption">Local development only · no real payment</p>
+      <h1 class="book-title" style="margin-top:1rem">Fake checkout</h1>
+      <p class="hero-sub" style="margin:1rem auto">Square is not configured, so this page stands in for Square's checkout. Paying sends a signed payment.updated webhook through the real verification and booking code.</p>
+      <div class="code-box">$100.00</div>
+      <button class="btn btn-primary btn-block" id="pay" type="button" style="margin-top:1.5rem">Pay $100 (fake)</button>
+      <div id="error" role="alert"></div>
+    </div>
+  </main>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    (function () {
+      const hold = new URLSearchParams(location.search).get("hold");
+      document.getElementById("pay").addEventListener("click", async function () {
+        this.disabled = true;
+        const { status, data } = await Encore.api("/api/dev/fake-payment/" + encodeURIComponent(hold), { method: "POST" });
+        if (status === 200) {
+          location.href = "confirm.html?hold=" + encodeURIComponent(hold);
+          return;
+        }
+        this.disabled = false;
+        document.getElementById("error").replaceChildren(Encore.el("p", { class: "notice error", text: Encore.detailText(data) }));
+      });
+    })();
+  </script>
+</body>
+</html>

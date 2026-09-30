@@ -92,3 +92,14 @@ def test_quote_endpoint_rejects_invalid_combination() -> None:
     response = client.post("/api/quote", json={"package": "standard", "kids": 10, "addons": {"highlight_reel": 1}})
     assert response.status_code == 422
     assert "requires Tournament" in response.json()["detail"]
+
+
+def test_catalog_mirrors_pricing_tables() -> None:
+    body = TestClient(app).get("/api/catalog").json()
+    assert [(p["key"], p["price_cents"], p["included_kids"]) for p in body["packages"]] == [
+        ("standard", 39900, 15),
+        ("plus", 54900, 20),
+        ("premium", 74900, 25),
+    ]
+    assert {a["key"]: a["price_cents"] for a in body["addons"]}["highlight_reel"] == 5000
+    assert body["deposit_cents"] == 10000
