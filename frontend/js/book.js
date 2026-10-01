@@ -311,11 +311,11 @@
         ]
       : [
           el("div", { class: "rail-total" + fade("total"), text: money(q.total_cents) }),
+          // "$100 today" in the accent, then the remainder muted on the same line: the two amounts say it all.
           el("div", { class: "rail-today" }, [
             el("b", { class: "rail-today-amt" + fade("deposit"), text: `${money(q.deposit_cents)} today` }),
-            el("span", { class: "rail-reassure", text: requesting() ? " · nothing is charged now" : " · nothing is charged until the last step" }),
+            el("span", { class: "rail-reassure" + fade("balance"), text: ` · ${money(q.balance_cents)} due at the party` }),
           ]),
-          el("div", { class: "rail-due" + fade("balance"), text: `${money(q.balance_cents)} due at the party` }),
         ];
     // replaceChildren stringifies a null child, so the DETAILS button is filtered out, not passed as null.
     const details = payment
