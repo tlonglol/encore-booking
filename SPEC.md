@@ -110,7 +110,7 @@ A single-page app served at `/book/*`, separate from the landing page. The shell
 **Tier accents.** Each tier owns an accent colour used wherever it is referenced (Standard cyan, Plus Encore blue, Premium violet). On a tab switch the date-card prices change colour with a short crossfade and the numbers swap instantly (no counting animation); the sticky total, the rail's package line, the SELECT button and the step highlight all inherit it. Colour lives in text, never in card backgrounds. `prefers-reduced-motion` skips the colour crossfade.
 
 **Explaining the tiers.** One shared package-feature structure feeds all four surfaces, so they cannot drift: the landing-page cards, the diff strip, the tab popovers and the compare drawer.
-- Diff strip: one line under the tab bar, in the new tier's colour, updating on the same beat as the price animation, e.g. "Plus adds: 6 games, decorations + balloon tower, favor bags · +$150". Downgrades are stated as plainly as upgrades ("Standard drops … · −$150").
+- Diff strip: one line under the tab bar, in the new tier's colour, updating on the same beat as the price animation, e.g. "Plus adds: 6 games, decorations + balloon tower, favor bags · +$150". Moving up a tier shows what it adds and the extra cost. Moving down, or landing on the base tier, shows only what that tier includes and its price ("Standard includes: 4 games, private buyout, birthday banner · $399"): there is no "drops" wording and no minus amount anywhere, since the tabs and the compare drawer already show what a lower tier lacks.
 - Tab popovers: an info control per tab opens a compact card with that tier's unlocks in its colour and the below-tier items greyed.
 - "Compare all plans" opens a drawer over the date page. It never leaves the funnel.
 
