@@ -740,25 +740,16 @@
     }
     const from = previous || (draft.package === "standard" ? null : "standard");
     const label = pkg().label;
-    // Up a tier: what it adds, and the extra cost. Anywhere else (the base tier, or a move down): just what the
-    // tier includes and its price. Never a "drops" line and never a minus amount.
+    // Up a tier: what it adds. Anywhere else (the base tier, or a move down): just what the tier includes.
+    // No price (the tabs carry that), never a "drops" line and never a minus amount.
     const movingUp = from && C.TIERS.indexOf(draft.package) > C.TIERS.indexOf(from);
     if (!movingUp) {
       const items = C.highlights(draft.package).map((feature) => C.shortFor(feature, draft.package));
-      strip.replaceChildren(
-        el("b", { text: `${label} includes: ` }),
-        items.join(", "),
-        el("span", { class: "diff-delta", text: ` · ${dollars(pkg().price_cents)}` })
-      );
+      strip.replaceChildren(el("b", { text: `${label} includes: ` }), items.join(", "));
       return;
     }
     const change = C.diff(from, draft.package);
-    const delta = pkg().price_cents - pkg(from).price_cents;
-    strip.replaceChildren(
-      el("b", { text: `${label} adds: ` }),
-      change.items.join(", "),
-      el("span", { class: "diff-delta", text: ` · +${dollars(delta)}` })
-    );
+    strip.replaceChildren(el("b", { text: `${label} adds: ` }), change.items.join(", "));
   }
 
   function togglePopover(key) {
