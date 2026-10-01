@@ -1316,3 +1316,39 @@ img { max-width: 100%; }
 .all-wk summary::after { content: '▾'; transition: transform 0.2s; }
 .all-wk[open] summary::after { transform: rotate(180deg); }
 .all-wk .wk-grid { padding: 4px 16px 16px; }
+
+/* ── Money block: a three-level hierarchy that swaps emphasis on the payment step ──
+   Pre-payment: total (largest, white) / "$100 today" (the only accent) / remainder (small, muted, own line).
+   Payment step: "Due now: $100" (largest, accent) / one calm line. Phones are the compact version. */
+.rail-money { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.rail-total { font-size: 34px; }
+.rail-total-accent { color: var(--tier); transition: color 200ms ease; }
+.rail-today { font-family: var(--condensed); font-size: 15px; letter-spacing: 0.03em; color: var(--gray-light); }
+.rail-today-amt { color: var(--tier); font-weight: 800; transition: color 200ms ease; }
+.rail-reassure { display: none; color: var(--gray-light); font-weight: 500; }
+.rail-due { display: none; flex-basis: 100%; font-family: var(--condensed); font-size: 13px; letter-spacing: 0.04em; color: var(--gray); }
+.rail-calm { flex-basis: 100%; font-family: var(--condensed); font-size: 13px; font-weight: 600; letter-spacing: 0.03em; color: var(--white); }
+.rail.open .rail-reassure { display: inline; }
+.rail.open .rail-due { display: block; }
+.rail-details { margin-left: auto; }
+.rail-money.pending { opacity: 0.6; transition: opacity 120ms ease; }
+.rail-money { transition: opacity 200ms ease; }
+
+/* an amount that changed fades in rather than snapping: the same quiet beat as a tier price change */
+.amt-fade { animation: amt-in 220ms ease-out; }
+@keyframes amt-in { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .amt-fade { animation: none; } .rail-money, .rail-money.pending { transition: none; } }
+
+.pay-summary .roll .total { color: var(--tier); transition: color 200ms ease; }
+.pay-summary .deposit-math { color: var(--white); font-weight: 600; }
+
+@media (min-width: 769px) {
+  .rail-money { display: grid; gap: 3px; }
+  .rail-total { font-size: 40px; }
+  .rail-total-accent { font-size: 36px; }
+  .rail-today { font-size: 16px; }
+  .rail-reassure { display: inline; }
+  .rail-due { display: block; font-size: 14px; }
+  .rail-calm { font-size: 16px; }
+  .rail-details { justify-self: start; margin: 8px 0 0; }
+}

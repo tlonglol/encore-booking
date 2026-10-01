@@ -60,7 +60,7 @@ def test_sms_templates_match_spec(db: Session, engine: Engine) -> None:
     assert parent["recipient"] == "+19145550001"
     assert parent["body"] == (
         f"You're booked! Standard party {date_label} 10:00 AM at Encore Esports, 18 kids. $100 deposit received, "
-        "balance $444 due day of party. 538 Main St, 2nd floor, entrance on Division St. "
+        "$444 due at the party. 538 Main St, 2nd floor, entrance on Division St. "
         f"Questions: (646) 203-8087. Details: http://testserver/confirm.html?code={code}"
     )
     assert owner["recipient"] == "+19145559999"
@@ -202,7 +202,7 @@ def test_email_body_has_everything_the_parent_needs(db: Session, engine: Engine)
         "  Pizza Pack: $40",
         "  Total: $544",
         "  Deposit received: $100",
-        "  Balance due day of party: $444",
+        "  Due at the party: $444",
         "538 Main St, 2nd floor, entrance on Division St.",
         "Cancel or reschedule free up to 7 days before your party.",
         "you can reschedule once",

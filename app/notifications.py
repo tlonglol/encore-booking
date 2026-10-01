@@ -63,7 +63,7 @@ def parent_booked_sms(booking: Booking, confirmation_url: str) -> str:
     return (
         f"You're booked! {PACKAGES[booking.package].label} party {when(booking.event_starts_at)} at Encore Esports, "
         f"{booking.kids} kids. {dollars(booking.deposit_cents)} deposit received, "
-        f"balance {dollars(booking.total_cents - booking.deposit_cents)} due day of party. {VENUE_DETAILS} "
+        f"{dollars(booking.total_cents - booking.deposit_cents)} due at the party. {VENUE_DETAILS} "
         f"Details: {confirmation_url}"
     )
 
@@ -99,7 +99,7 @@ def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
             *itemized_lines(booking.line_items),
             f"  Total: {dollars(booking.total_cents)}",
             f"  Deposit received: {dollars(booking.deposit_cents)}",
-            f"  Balance due day of party: {dollars(booking.total_cents - booking.deposit_cents)}",
+            f"  Due at the party: {dollars(booking.total_cents - booking.deposit_cents)}",
             "",
             "Where: Encore Esports, 538 Main St, 2nd floor, entrance on Division St.",
             "",

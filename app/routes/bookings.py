@@ -34,7 +34,7 @@ def booking_ics(booking: Booking) -> str:
     stamp = "{:%Y%m%dT%H%M%SZ}"
     balance = (booking.total_cents - booking.deposit_cents) // 100
     description = (
-        f"Confirmation {booking.confirmation_code}. Balance ${balance} due day of party."
+        f"Confirmation {booking.confirmation_code}. ${balance} due at the party."
         f" Questions: (646) 203-8087."
     )
     lines = [

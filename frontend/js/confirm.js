@@ -39,7 +39,7 @@
       el("dl", {}, [
         ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]),
         el("div", { class: "balance", style: "display:contents" }, [
-          el("dt", { text: "Balance due day of party" }),
+          el("dt", { text: "Due at the party" }),
           el("dd", { text: money(party.balance_cents) }),
         ]),
       ]),
@@ -57,7 +57,7 @@
     google.searchParams.set("text", `Encore Esports ${party.package_label} party`);
     google.searchParams.set("dates", `${utcStamp(party.starts_at)}/${utcStamp(party.starts_at, party.hours)}`);
     google.searchParams.set("location", "Encore Esports, 538 Main St, 2nd floor, New Rochelle, NY");
-    google.searchParams.set("details", `Confirmation ${party.confirmation_code}. Balance ${money(party.balance_cents)} due day of party.`);
+    google.searchParams.set("details", `Confirmation ${party.confirmation_code}. Balance ${money(party.balance_cents)} due at the party.`);
     const apiOrigin = (window.ENCORE_CONFIG && window.ENCORE_CONFIG.apiOrigin) || "";
     return el("div", { class: "cal-buttons" }, [
       el("a", { class: "btn btn-ghost btn-sm", href: google.toString(), target: "_blank", rel: "noopener", text: "Add to Google Calendar" }),
@@ -74,7 +74,7 @@
     document.getElementById("quote-split").replaceChildren(
       el("b", { text: `${money(party.deposit_cents)} paid` }),
       el("br"),
-      `${money(party.balance_cents)} day of party`
+      `${money(party.balance_cents)} due at the party`
     );
     document.getElementById("quote-lines").replaceChildren(
       ...party.line_items.map((item) =>

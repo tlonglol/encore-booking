@@ -131,11 +131,13 @@
       return;
     }
     const seq = ++quoteSeq;
+    $("rail-money").classList.add("pending");
     const { status, data } = await api("/api/quote", {
       method: "POST",
       body: { package: draft.package, kids: kidsValue(), addons: draft.addons },
     });
     if (seq !== quoteSeq) return;
+    $("rail-money").classList.remove("pending");
     if (status === 200) ui.quote = data;
     renderMoney();
     renderAdvance();
@@ -256,27 +258,48 @@
     );
   }
 
+  // The payment step is the info step of a booking that takes a deposit. Same source of truth as the rail's
+  // step highlight (ui.step): there is no second copy of the step logic.
+  function onPaymentStep() {
+    return ui.step === "info" && !requesting();
+  }
+
+  // The money block, step-aware. Pre-payment: the total leads (the decision number), "$100 today" is the
+  // only accent, and the remainder sits on its own muted line. Payment step: "Due now" leads in the accent.
   function renderMoney() {
-    const money_ = $("rail-money");
+    const box = $("rail-money");
     if (!draft.package || !ui.quote) {
-      money_.replaceChildren(
+      ui.moneyShown = null;
+      box.replaceChildren(
         el("div", { class: "rail-total", text: ui.catalog ? `from ${money(Math.min(...ui.catalog.packages.map((p) => p.price_cents)))}` : "—" }),
-        el("div", { class: "rail-split", text: "Private venue party" })
+        el("div", { class: "rail-due", text: "Private venue party" })
       );
       return;
     }
-    money_.replaceChildren(
-      el("div", { class: "rail-total", text: money(ui.quote.total_cents) }),
-      el("div", { class: "rail-split" }, [
-        el("b", { text: `${money(ui.quote.deposit_cents)} today` }),
-        ` · ${money(ui.quote.balance_cents)} day of party`,
-      ]),
-      el("button", {
-        type: "button",
-        class: "rail-details",
-        text: "Details",
-        onclick: () => openCompare("summary"),
-      })
+    const q = ui.quote;
+    const payment = onPaymentStep();
+    const next = { mode: payment ? "pay" : "pre", total: q.total_cents, deposit: q.deposit_cents, balance: q.balance_cents };
+    const prev = ui.moneyShown || {};
+    // A changed amount fades in; a layout switch (pre-payment to payment step) does not.
+    const fade = (key) => (prev.mode === next.mode && prev[key] !== next[key] ? " amt-fade" : "");
+    ui.moneyShown = next;
+
+    const lines = payment
+      ? [
+          el("div", { class: "rail-total rail-total-accent" + fade("deposit"), text: `Due now: ${money(q.deposit_cents)}` }),
+          el("div", { class: "rail-calm" + fade("total") + fade("balance"), text: `Total ${money(q.total_cents)} · ${money(q.balance_cents)} due at the party` }),
+        ]
+      : [
+          el("div", { class: "rail-total" + fade("total"), text: money(q.total_cents) }),
+          el("div", { class: "rail-today" }, [
+            el("b", { class: "rail-today-amt" + fade("deposit"), text: `${money(q.deposit_cents)} today` }),
+            el("span", { class: "rail-reassure", text: requesting() ? " · nothing is charged now" : " · nothing is charged until the last step" }),
+          ]),
+          el("div", { class: "rail-due" + fade("balance"), text: `${money(q.balance_cents)} due at the party` }),
+        ];
+    box.replaceChildren(
+      ...lines,
+      el("button", { type: "button", class: "rail-details", text: "Details", onclick: () => openCompare("summary") })
     );
   }
 
@@ -1215,7 +1238,8 @@
       total.textContent = "…";
       return;
     }
-    total.textContent = money(ui.quote.total_cents);
+    // A weekday request takes no payment, so only a real checkout says "Due now".
+    total.textContent = requesting() ? money(ui.quote.total_cents) : `Due now: ${money(ui.quote.deposit_cents)}`;
     $("summary-lines").replaceChildren(
       ...ui.quote.line_items.map((item) =>
         el("li", {}, [
@@ -1224,11 +1248,7 @@
         ])
       )
     );
-    $("deposit-math").replaceChildren(
-      `${money(ui.quote.total_cents)} total · `,
-      el("b", { text: `${money(ui.quote.deposit_cents)} today` }),
-      ` · ${money(ui.quote.balance_cents)} day of party`
-    );
+    $("deposit-math").textContent = `Total ${money(ui.quote.total_cents)} · ${money(ui.quote.balance_cents)} due at the party`;
   }
 
   function readForm() {
@@ -1432,7 +1452,7 @@
             ])
           ),
           el("li", {}, [el("span", { text: "Deposit due now" }), el("span", { text: money(ui.quote.deposit_cents) })]),
-          el("li", {}, [el("span", { text: "Balance due day of party" }), el("span", { text: money(ui.quote.balance_cents) })]),
+          el("li", {}, [el("span", { text: "Due at the party" }), el("span", { text: money(ui.quote.balance_cents) })]),
         ])
       );
       $("compare-title").textContent = "Your party";

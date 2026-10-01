@@ -16,7 +16,7 @@ def test_calendar_ics_for_a_booking(db: Session) -> None:
     assert f"DTEND:{day:%Y%m%d}T170000Z" in body, "a Standard party runs 3 hours"
     assert "SUMMARY:Encore Esports Standard party" in body
     assert "LOCATION:Encore Esports\\, 538 Main St\\, 2nd floor (entrance on Division St)" in body
-    assert f"Confirmation {booking.confirmation_code}. Balance $444 due day of party." in body
+    assert f"Confirmation {booking.confirmation_code}. $444 due at the party." in body
     assert "+1914" not in body and "@example.com" not in body, "no contact details in the calendar file"
 
 
