@@ -449,11 +449,11 @@
       el("div", { class: "bday-card" }, [
         cakeIcon(),
         el("div", { class: "bday-text" }, [
-          el("label", { for: "bday", class: "bday-title" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
+          el("label", { for: "bday-m", class: "bday-title" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
           el("div", { class: "bday-benefit", text: "We'll line up the closest open weekends." }),
         ]),
         el("div", { class: "bday-pick" }, [
-          el("input", { id: "bday", type: "date", value: draft.birthday || null, min: ui.today || null, max: ui.today ? shiftDate(ui.today, 366) : null, onchange: onBirthday }),
+          dateControl(),
           el("button", { type: "button", class: "link-btn", id: "bday-clear", hidden: !draft.birthday, text: "Clear", onclick: clearBirthday }),
         ]),
       ]),
@@ -501,6 +501,7 @@
     );
     renderDiff(null);
     renderGrid();
+    setSegments(draft.birthday);
     loadGrid();
   }
 
@@ -800,25 +801,63 @@
     if (node) node.textContent = message || "";
   }
 
-  function onBirthday(event) {
-    const input = event.target;
-    const value = input.value;
-    if (!value) {
-      clearBirthday();
+  // Month / day / year boxes. They exist so that Backspace in an empty box steps back to the previous one and
+  // editing one box never wipes the rest, neither of which the browser's built-in date field allows.
+  const SEG_LENGTHS = [2, 2, 4];
+
+  function segments() {
+    return [...document.querySelectorAll(".date-seg .seg")];
+  }
+
+  function setSegments(value) {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+    const [m, d, y] = segments();
+    if (!m) return;
+    m.value = parts ? parts[2] : "";
+    d.value = parts ? parts[3] : "";
+    y.value = parts ? parts[1] : "";
+    const native = $("bday");
+    if (native) native.value = value || "";
+  }
+
+  function realDate(value) {
+    const when = new Date(value + "T12:00:00Z");
+    return !Number.isNaN(when.getTime()) && when.toISOString().slice(0, 10) === value;
+  }
+
+  // Called on every keystroke in a box. Only a complete real date applies; a half-edited date changes nothing,
+  // and only emptying every box removes the birthday.
+  function commitSegments() {
+    const [mm, dd, yy] = segments().map((box) => box.value);
+    birthdayMsg("");
+    if (!mm && !dd && !yy) {
+      if (draft.birthday) clearBirthday();
       return;
     }
+    if (mm.length === 2 && dd.length === 2 && yy.length === 4) {
+      const value = `${yy}-${mm}-${dd}`;
+      if (!realDate(value)) {
+        birthdayMsg("That isn't a real date. Check the month and day.");
+        return;
+      }
+      if (value !== draft.birthday) applyBirthday(value);
+    }
+  }
+
+  function applyBirthday(value) {
     if (ui.today && value < ui.today) {
       birthdayMsg("That date has already passed. Pick the upcoming birthday.");
-      input.value = draft.birthday || "";
+      setSegments(draft.birthday);
       return;
     }
     if (ui.today && value > shiftDate(ui.today, 366)) {
       birthdayMsg("That's more than a year away. Check the year, or call (646) 203-8087.");
-      input.value = draft.birthday || "";
+      setSegments(draft.birthday);
       return;
     }
     birthdayMsg("");
     draft.birthday = value;
+    setSegments(value);
     save();
     $("bday-clear").hidden = false;
     renderRail();
@@ -832,14 +871,91 @@
     ui.weekends = null;
     ui.birthdayNote = "";
     save();
-    const input = $("bday");
-    if (input) input.value = "";
+    setSegments("");
     const clear = $("bday-clear");
     if (clear) clear.hidden = true;
     birthdayMsg("");
     renderRail();
     pushDraft();
     loadGrid();
+  }
+
+  function dateControl() {
+    const box = (cls, placeholder, label) =>
+      el("input", {
+        class: `seg ${cls}`,
+        type: "text",
+        inputmode: "numeric",
+        autocomplete: "off",
+        enterkeyhint: "next",
+        maxlength: String(cls === "seg-y" ? 4 : 2),
+        placeholder: placeholder,
+        "aria-label": label,
+      });
+    const boxes = [box("seg-m", "mm", "Birthday month"), box("seg-d", "dd", "Birthday day"), box("seg-y", "yyyy", "Birthday year")];
+    boxes[0].id = "bday-m";
+
+    boxes.forEach((input, i) => {
+      input.addEventListener("input", () => {
+        input.value = input.value.replace(/\D/g, "").slice(0, SEG_LENGTHS[i]);
+        // A first digit that can only start a two-digit month or day pads itself and moves on.
+        if (i === 0 && input.value.length === 1 && Number(input.value) > 1) input.value = "0" + input.value;
+        if (i === 1 && input.value.length === 1 && Number(input.value) > 3) input.value = "0" + input.value;
+        if (input.value.length === SEG_LENGTHS[i] && i < 2) boxes[i + 1].focus();
+        commitSegments();
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Backspace" && input.value === "" && i > 0) {
+          // Already empty: step back to the previous box, ready for the next Backspace to clear it.
+          event.preventDefault();
+          boxes[i - 1].focus();
+        } else if (event.key === "ArrowLeft" && input.selectionStart === 0 && i > 0) {
+          event.preventDefault();
+          boxes[i - 1].focus();
+        } else if (event.key === "ArrowRight" && input.selectionEnd === input.value.length && i < 2) {
+          event.preventDefault();
+          boxes[i + 1].focus();
+        } else if ((event.key === "/" || event.key === "-" || event.key === ".") && i < 2) {
+          event.preventDefault();
+          if (input.value) boxes[i + 1].focus();
+        }
+      });
+      input.addEventListener("focus", () => input.select());
+    });
+
+    // The native calendar, one tap away. It lives off-screen but real so the browser can open its picker.
+    const native = el("input", {
+      id: "bday",
+      type: "date",
+      class: "seg-native",
+      tabindex: "-1",
+      "aria-hidden": "true",
+      min: ui.today || null,
+      max: ui.today ? shiftDate(ui.today, 366) : null,
+      onchange: (event) => {
+        if (event.target.value) applyBirthday(event.target.value);
+      },
+    });
+    const calendar = el("button", {
+      type: "button",
+      class: "seg-cal",
+      "aria-label": "Pick from calendar",
+      onclick: () => (native.showPicker ? native.showPicker() : native.focus()),
+    });
+    calendar.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
+
+    const wrap = el("div", { class: "date-seg", role: "group", "aria-label": "Birthday" }, [
+      boxes[0],
+      el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+      boxes[1],
+      el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+      boxes[2],
+      calendar,
+      native,
+    ]);
+    return wrap;
   }
 
   // Tapping a date only selects it. Nothing is held and the page stays put until Confirm.

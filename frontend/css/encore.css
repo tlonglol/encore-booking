@@ -1372,13 +1372,34 @@ img { max-width: 100%; }
 .bday-card .bday-opt { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: none; color: var(--gray-light); }
 .bday-benefit { font-size: 13px; color: var(--gray-light); margin-top: 1px; }
 .bday-pick { display: flex; align-items: center; gap: 10px; }
-.bday-card .bday-pick input { background: var(--black); border: 1px solid var(--blue-light); }
-.bday-card .bday-pick input:focus { border-color: #8cc3ff; }
-.bday-card .bday-pick input {
-  padding: 8px 12px;
+
+/* Birthday entry: three numeric boxes plus a calendar button, in place of the browser's date field. */
+.date-seg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px 3px 8px;
+  background: var(--black);
+  border: 1px solid var(--blue-light);
   border-radius: 6px;
+}
+.date-seg:focus-within { border-color: #8cc3ff; box-shadow: 0 0 0 2px rgba(26, 116, 204, 0.3); }
+.bday-card .date-seg .seg {
+  width: 34px;
+  padding: 6px 2px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
   color: var(--white);
   font-family: var(--body);
   font-size: 15px;
-  color-scheme: dark;
 }
+.bday-card .date-seg .seg-y { width: 56px; }
+.bday-card .date-seg .seg::placeholder { color: var(--gray); }
+.bday-card .date-seg .seg:focus { outline: none; background: rgba(26, 116, 204, 0.4); }
+.seg-sep { color: var(--gray); user-select: none; }
+.seg-cal { display: grid; place-items: center; width: 30px; height: 30px; margin-left: 4px; background: none; border: 0; border-radius: 4px; color: var(--gray-light); }
+.seg-cal:hover { color: var(--blue-light); background: rgba(26, 116, 204, 0.16); }
+.seg-native { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
