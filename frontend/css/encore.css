@@ -1128,3 +1128,20 @@ img { max-width: 100%; }
 .pick-card .pick-go { margin-top: auto; white-space: nowrap; font-size: 14px; padding: 12px 10px; background: var(--tier); border-color: var(--tier); color: #04121f; }
 .pick-card .pick-go:hover { filter: brightness(1.12); }
 .compare-says { font-family: var(--condensed); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--tier); }
+
+/* Date cards follow the active plan's colour: open dates get a soft tier outline,
+   the selected (or your held) date a full-strength one. With no plan chosen they keep Encore blue. */
+.funnel { --tier-line: var(--border-blue); --tier-line-strong: var(--blue); }
+[data-tier="standard"] .funnel, [data-tier="plus"] .funnel, [data-tier="premium"] .funnel {
+  --tier-line: color-mix(in srgb, var(--tier) 55%, transparent);
+  --tier-line-strong: var(--tier);
+}
+.wk-card.open, .wk-card.request { border-color: var(--tier-line); }
+.wk-card.open:hover, .wk-card.request:hover { border-color: var(--tier-line-strong); }
+.wk-card.yours { border-color: var(--tier-line-strong); box-shadow: 0 0 0 1px var(--tier-line-strong); background: linear-gradient(135deg, color-mix(in srgb, var(--tier-line-strong) 14%, transparent), var(--card)); }
+.wk-card.open .wk-state span, .wk-card.request .wk-state span {
+  border-color: var(--tier-line);
+  color: var(--tier-line-strong);
+  background: color-mix(in srgb, var(--tier-line-strong) 12%, transparent);
+}
+.wk-card.yours .wk-state span { background: var(--tier-line-strong); border-color: var(--tier-line-strong); color: #04121f; }
