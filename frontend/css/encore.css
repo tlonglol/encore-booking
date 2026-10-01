@@ -1235,3 +1235,17 @@ img { max-width: 100%; }
 .more-btn:hover:not(:disabled) { background: rgba(26, 116, 204, 0.26); }
 .more-btn:disabled { opacity: 0.6; }
 .more-end { text-align: center; margin-top: 1.25rem; font-size: 14px; color: var(--gray-light); }
+
+/* A selected add-on lights up a touch: faint blue wash, soft edge glow. Lighter than the selected date
+   cards on purpose, and still Encore blue because add-on prices are not tied to a plan. */
+.opt.on:not(.included) {
+  border-color: var(--blue-light);
+  background:
+    radial-gradient(110% 120% at 100% 0%, rgba(26, 116, 204, 0.17), transparent 60%),
+    linear-gradient(135deg, rgba(10, 42, 80, 0.55), rgba(5, 5, 5, 0.4));
+  box-shadow:
+    0 0 12px rgba(26, 116, 204, 0.2),
+    inset 0 0 16px rgba(26, 116, 204, 0.09);
+}
+.opt.on:not(.included) .addon-name { color: #fff; }
+.opt { transition: border-color 0.2s, background 0.2s, box-shadow 0.2s; }

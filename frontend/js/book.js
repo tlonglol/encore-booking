@@ -954,7 +954,7 @@
           el("div", { class: "addon-desc", text: blocked ? "Add Tournament + Livestream first." : copy.short }),
         ]);
         if (included.indexOf(addon.key) >= 0) {
-          return el("div", { class: "opt on" }, [
+          return el("div", { class: "opt on included" }, [
             iconBox,
             body,
             el("div", { class: "opt-side" }, [el("span", { class: "opt-included", text: "Included" })]),
