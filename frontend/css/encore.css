@@ -1525,7 +1525,9 @@ img { max-width: 100%; }
   transition: opacity 400ms ease;
 }
 .rail-delta:not(.show) { opacity: 0; }
-.rail-delta.add { color: var(--tier); background: color-mix(in srgb, var(--tier) 15%, transparent); }
+/* Fixed brand blue, the same token as the card's "+$199" and the selected card's border: the toggle,
+   the price on the card and the chip all speak one colour. Not the tier accent. */
+.rail-delta.add { color: var(--blue-light); background: rgba(26, 116, 204, 0.15); }
 .rail-delta.remove { color: var(--gray-light); background: rgba(255, 255, 255, 0.06); }
 @media (prefers-reduced-motion: reduce) { .rail-delta { transition: none; } }
 @media (min-width: 769px) { .rail-delta { font-size: 12px; } }
