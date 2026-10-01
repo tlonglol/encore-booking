@@ -914,6 +914,16 @@ img { max-width: 100%; }
   color: var(--gray);
 }
 .tab-info:hover { color: var(--tier); }
+.diff-strip {
+  margin-top: 10px;
+  min-height: 20px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--tier);
+}
+.diff-strip b { font-weight: 600; }
+.diff-delta { color: var(--gray-light); }
+.diff-muted { color: var(--gray); }
 .tab-pop { margin-top: 10px; background: var(--card); border: 1px solid var(--tier); border-radius: 8px; padding: 1rem 1.1rem; }
 .pop-title { font-family: var(--condensed); font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tier); margin-bottom: 0.6rem; }
 .pop-list { list-style: none; display: grid; gap: 4px; margin-bottom: 0.75rem; }
