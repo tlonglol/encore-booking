@@ -1839,5 +1839,6 @@
     render(target);
   }
 
+  window.EncoreShell.mountFooter();
   boot();
 })();

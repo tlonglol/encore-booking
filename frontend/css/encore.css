@@ -1536,3 +1536,12 @@ img { max-width: 100%; }
 .rail-policy { font-size: 12px; line-height: 1.45; color: var(--gray-light); text-align: center; margin: 2px 0 -2px; }
 .policy-more { background: none; border: 0; padding: 0; font: inherit; color: var(--blue-light); text-decoration: underline; }
 .policy-full { display: block; margin-top: 6px; text-align: left; color: var(--gray); }
+
+/* On phones the funnel's summary bar is fixed to the bottom, so the page footer, now the last thing on the page,
+   has to clear it. (The funnel container used to reserve this space itself.) */
+.funnel { padding-bottom: 1.5rem; }
+.funnel-body .page-footer { padding-bottom: calc(230px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 769px) {
+  .funnel { padding-bottom: 3rem; }
+  .funnel-body .page-footer { padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); }
+}

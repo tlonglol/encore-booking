@@ -2,6 +2,7 @@
   const { api, detailText, money, el } = window.Encore;
   const $ = (id) => document.getElementById(id);
   const panel = $("panel");
+  window.EncoreShell.mountFooter();
   window.EncoreShell.mountNav({ accent: "ADMIN", ctaTag: "button", ctaId: "logout", ctaLabel: "Log out", ctaHidden: true });
   let current = "bookings";
 

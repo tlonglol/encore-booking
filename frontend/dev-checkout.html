@@ -19,8 +19,12 @@
       <div id="error" role="alert"></div>
     </div>
   </main>
+  <footer class="page-footer" id="footer"></footer>
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/content.js"></script>
+  <script src="js/shell.js"></script>
+  <script>window.EncoreShell.mountFooter();</script>
   <script>
     (function () {
       const hold = new URLSearchParams(location.search).get("hold");
