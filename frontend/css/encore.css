@@ -1352,3 +1352,33 @@ img { max-width: 100%; }
   .rail-calm { font-size: 16px; }
   .rail-details { justify-self: start; margin: 8px 0 0; }
 }
+
+/* Birthday finder as a small feature card: same family as the Compare All Plans button, fixed brand blue. */
+.bday-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(26, 116, 204, 0.1);
+  border: 1px solid var(--blue-light);
+  border-radius: 8px;
+}
+.bday-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: rgba(26, 116, 204, 0.16); color: var(--blue-light); }
+.bday-icon svg { display: block; }
+.bday-text { flex: 1 1 200px; min-width: 0; }
+.bday-title { display: block; font-family: var(--condensed); font-size: 15px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #cfe4ff; line-height: 1.2; }
+.bday-card .bday-opt { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: none; color: var(--gray-light); }
+.bday-benefit { font-size: 13px; color: var(--gray-light); margin-top: 1px; }
+.bday-pick { display: flex; align-items: center; gap: 10px; }
+.bday-card .bday-pick input { background: var(--black); border: 1px solid var(--blue-light); }
+.bday-card .bday-pick input:focus { border-color: #8cc3ff; }
+.bday-card .bday-pick input {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--white);
+  font-family: var(--body);
+  font-size: 15px;
+  color-scheme: dark;
+}

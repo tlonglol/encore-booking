@@ -390,6 +390,16 @@
   }
 
   // ---------- step 1: date ----------
+  // Lucide "cake" (stroke icon, 24px grid), static trusted markup.
+  function cakeIcon() {
+    const span = el("span", { class: "bday-icon", "aria-hidden": "true" });
+    span.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"/>' +
+      '<path d="M2 21h20"/><path d="M7 8v3"/><path d="M12 8v3"/><path d="M17 8v3"/><path d="M7 4h.01"/><path d="M12 4h.01"/><path d="M17 4h.01"/></svg>';
+    return span;
+  }
+
   // Coming back to the date step keeps the confirmed date selected, so the rail offers
   // "Confirm {date}" again instead of making the parent pick it twice.
   function restorePicked() {
@@ -436,10 +446,16 @@
       ),
       el("div", { class: "diff-strip", id: "diff-strip" }),
       el("div", { class: "tab-pop", id: "tab-pop", hidden: true }),
-      el("div", { class: "bday" }, [
-        el("label", { for: "bday" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
-        el("input", { id: "bday", type: "date", value: draft.birthday || null, min: ui.today || null, max: ui.today ? shiftDate(ui.today, 366) : null, onchange: onBirthday }),
-        el("button", { type: "button", class: "link-btn", id: "bday-clear", hidden: !draft.birthday, text: "Clear", onclick: clearBirthday }),
+      el("div", { class: "bday-card" }, [
+        cakeIcon(),
+        el("div", { class: "bday-text" }, [
+          el("label", { for: "bday", class: "bday-title" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
+          el("div", { class: "bday-benefit", text: "We'll line up the closest open weekends." }),
+        ]),
+        el("div", { class: "bday-pick" }, [
+          el("input", { id: "bday", type: "date", value: draft.birthday || null, min: ui.today || null, max: ui.today ? shiftDate(ui.today, 366) : null, onchange: onBirthday }),
+          el("button", { type: "button", class: "link-btn", id: "bday-clear", hidden: !draft.birthday, text: "Clear", onclick: clearBirthday }),
+        ]),
       ]),
       el("p", { class: "bday-msg", id: "bday-msg", role: "alert" }),
     ]);
