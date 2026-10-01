@@ -1403,3 +1403,12 @@ img { max-width: 100%; }
 .seg-cal { display: grid; place-items: center; width: 30px; height: 30px; margin-left: 4px; background: none; border: 0; border-radius: 4px; color: var(--gray-light); }
 .seg-cal:hover { color: var(--blue-light); background: rgba(26, 116, 204, 0.16); }
 .seg-native { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+
+/* A notch slimmer vertically (Compare button and birthday card) so the top of the date step feels less crowded. */
+.compare-btn { padding: 6px 14px; }
+.tabs-head { margin-bottom: 8px; }
+.bday-card { padding: 7px 14px; margin-top: 10px; }
+.bday-icon { width: 30px; height: 30px; }
+.bday-card .date-seg { padding-top: 1px; padding-bottom: 1px; }
+.bday-card .date-seg .seg { padding-top: 5px; padding-bottom: 5px; }
+.seg-cal { height: 28px; }
