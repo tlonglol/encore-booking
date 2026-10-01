@@ -30,7 +30,7 @@ def list_bookings(db: Session) -> list[Row]:
                 """
                 SELECT b.id, b.confirmation_code, b.event_starts_at, b.package, b.kids, b.addons, b.total_cents,
                        b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email,
-                       b.kid_name, b.kid_age, b.notes,
+                       b.kid_name, b.kid_age, b.birthday, b.notes,
                        b.square_payment_id, b.created_at, b.cancelled_at, b.cancel_reason,
                        b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund
                 FROM bookings b
@@ -130,7 +130,7 @@ def list_requests(db: Session) -> list[Row]:
         db.execute(
             text(
                 "SELECT id, local_date, preferred_time, status, package, kids, addons, total_cents,"
-                " deposit_cents, first_name, last_name, phone, email, notes, created_at"
+                " deposit_cents, first_name, last_name, phone, email, kid_name, kid_age, birthday, notes, created_at"
                 " FROM requests ORDER BY status <> 'new', created_at DESC"
             )
         )

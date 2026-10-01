@@ -119,7 +119,9 @@ def patch_hold_email(hold_id: str, body: HoldEmailIn, db: Session = Depends(get_
 def patch_hold_draft(hold_id: str, body: DraftIn, db: Session = Depends(get_db)) -> Any:
     """Mirrors the funnel's draft onto the hold, priced server-side. Nothing here finalizes anything."""
     try:
-        hold = draft_hold(db, _parse_hold_id(hold_id), body.package, body.kids, body.addons)
+        hold = draft_hold(
+            db, _parse_hold_id(hold_id), body.package, body.kids, body.addons, body.birthday, venue_today(datetime.now(UTC))
+        )
     except (PricingError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except SlotNotFound as error:
@@ -148,9 +150,10 @@ def post_checkout(hold_id: str, body: CheckoutIn, db: Session = Depends(get_db))
         email=str(body.email),
         kid_name=body.kid_name,
         kid_age=body.kid_age,
+        birthday=body.birthday,
     )
     try:
-        hold = checkout_hold(db, parsed, data)
+        hold = checkout_hold(db, parsed, data, venue_today(datetime.now(UTC)))
     except (PricingError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except SlotNotFound as error:
@@ -189,9 +192,13 @@ def party_details(
 ) -> PartyDetails:
     """record is a Hold or a Booking; both carry the same snapshot fields."""
     package = PACKAGES[record.package]
+    booked = confirmation_code is not None
     return PartyDetails(
         confirmation_code=confirmation_code,
         first_name=first_name,
+        kid_name=record.kid_name if booked else None,
+        kid_age=record.kid_age if booked else None,
+        birthday=record.birthday if booked else None,
         package=record.package,
         package_label=package.label,
         day_label=format_day(starts_at),

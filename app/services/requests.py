@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models import PartyRequest
 from app.pricing import quote
-from app.services.holds import normalize_phone
+from app.services.holds import check_birthday, normalize_phone
 from app.timeutil import first_bookable_date, is_weekend
 
 EARLIEST_START = time(9, 0)
@@ -38,6 +38,7 @@ class RequestInput:
     email: str
     kid_name: str | None
     kid_age: int | None
+    birthday: date | None
     notes: str | None
     client_ip: str | None
 
@@ -93,6 +94,7 @@ def create_request(
         email=email,
         kid_name=(data.kid_name or "").strip() or None,
         kid_age=data.kid_age,
+        birthday=check_birthday(data.birthday, today),
         notes=(data.notes or "").strip() or None,
         client_ip=data.client_ip,
     )

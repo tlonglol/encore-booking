@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -12,9 +12,22 @@ from app.notifications import addons_summary
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
 from app.services.slots import SlotConflict, set_blocked
-from app.timeutil import format_clock, format_date, format_day, format_time
+from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time
 
 router = APIRouter(prefix="/api/admin")
+
+
+def short_date(day: date) -> str:
+    return f"{day:%b} {day.day}"
+
+
+def birthday_line(kid_name: str | None, kid_age: int | None, birthday: date | None, party_day: date) -> str | None:
+    """The owner's day-of line: "Leo turns 8 Oct 14, party Oct 10". Nothing when no birthday was given."""
+    if birthday is None:
+        return None
+    who = kid_name or "Birthday"
+    turns = f"{who} turns {kid_age}" if kid_age else f"{who}'s birthday"
+    return f"{turns} {short_date(birthday)}, party {short_date(party_day)}"
 
 
 class LoginIn(BaseModel):
@@ -104,6 +117,10 @@ def bookings(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "deposit_status": "paid (dev fake)" if row.square_payment_id.startswith("dev-pay-") else "paid",
             "kid_name": row.kid_name,
             "kid_age": row.kid_age,
+            "birthday": row.birthday.isoformat() if row.birthday else None,
+            "birthday_line": birthday_line(
+                row.kid_name, row.kid_age, row.birthday, row.event_starts_at.astimezone(VENUE_TZ).date()
+            ),
             "name": f"{row.first_name} {row.last_name}",
             "phone": row.phone,
             "email": row.email,
@@ -217,6 +234,8 @@ def party_requests(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "phone": row.phone,
             "email": row.email,
             "notes": row.notes,
+            "birthday": row.birthday.isoformat() if row.birthday else None,
+            "birthday_line": birthday_line(row.kid_name, row.kid_age, row.birthday, row.local_date),
             "created_at": row.created_at.isoformat(),
         }
         for row in admin_service.list_requests(db)

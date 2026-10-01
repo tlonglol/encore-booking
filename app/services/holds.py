@@ -13,6 +13,7 @@ from app.models import Booking, Hold, Slot
 from app.pricing import quote
 from app.timeutil import first_bookable_date
 
+BIRTHDAY_HORIZON_DAYS = 366
 HOLD_MINUTES = 15
 MAX_ACTIVE_HOLDS_PER_IP = 5
 SLOT_INDEX = "holds_one_active_per_slot"
@@ -58,6 +59,18 @@ class CheckoutInput:
     email: str
     kid_name: str
     kid_age: int
+    birthday: date | None = None
+
+
+def check_birthday(birthday: date | None, today: date) -> date | None:
+    """The upcoming birthday: today through a year out. Anything else is a typo or a past date."""
+    if birthday is None:
+        return None
+    if birthday < today:
+        raise ValueError("That birthday has already passed. Pick the upcoming one.")
+    if birthday > today + timedelta(days=BIRTHDAY_HORIZON_DAYS):
+        raise ValueError("That birthday is more than a year away. Check the year.")
+    return birthday
 
 
 def normalize_phone(raw: str) -> str:
@@ -167,10 +180,13 @@ def save_email(db: Session, hold_id: uuid.UUID, email: str) -> bool:
     return updated is not None
 
 
-def draft_hold(db: Session, hold_id: uuid.UUID, package: str, kids: int, addons: dict[str, int]) -> Hold:
+def draft_hold(
+    db: Session, hold_id: uuid.UUID, package: str, kids: int, addons: dict[str, int], birthday: date | None, today: date
+) -> Hold:
     """The party as the parent builds it, priced by the same function checkout uses. Never touches contact
     details, the payment link, or the hold's status; checkout re-prices before any money moves."""
     priced = quote(package, kids, addons)
+    checked_birthday = check_birthday(birthday, today)
     row = db.execute(
         select(Hold, func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"))
         .where(Hold.id == hold_id)
@@ -185,6 +201,7 @@ def draft_hold(db: Session, hold_id: uuid.UUID, package: str, kids: int, addons:
         status = "expired" if hold.status == "pending_payment" else hold.status
         db.rollback()
         raise HoldNotPending(status)
+    hold.birthday = checked_birthday
     hold.package = priced.package
     hold.kids = priced.kids
     hold.addons = priced.addons
@@ -217,12 +234,13 @@ def _enforce_contact_caps(db: Session, hold_id: uuid.UUID, phone: str, email: st
         raise HoldLimitReached("This email already has another date on hold.", row.email_expiry)
 
 
-def checkout_hold(db: Session, hold_id: uuid.UUID, data: CheckoutInput) -> Hold:
+def checkout_hold(db: Session, hold_id: uuid.UUID, data: CheckoutInput, today: date) -> Hold:
     """Prices server-side and snapshots everything onto the live hold, in one transaction, under the row lock
     the webhook also takes. The payment link is created by the caller afterwards; deposit_cents never changes."""
     priced = quote(data.package, data.kids, data.addons)
     phone = normalize_phone(data.phone)
     email = data.email.strip().lower()
+    birthday = check_birthday(data.birthday, today)
 
     row = db.execute(
         select(Hold, func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"))
@@ -255,6 +273,7 @@ def checkout_hold(db: Session, hold_id: uuid.UUID, data: CheckoutInput) -> Hold:
     hold.email = email
     hold.kid_name = data.kid_name.strip()
     hold.kid_age = data.kid_age
+    hold.birthday = birthday
     db.commit()
     db.refresh(hold)
     return hold

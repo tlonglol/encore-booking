@@ -57,6 +57,7 @@ class DraftIn(BaseModel):
     package: str
     kids: int
     addons: dict[str, int] = Field(default_factory=dict)
+    birthday: date | None = None
 
 
 class CheckoutIn(BaseModel):
@@ -69,6 +70,7 @@ class CheckoutIn(BaseModel):
     email: EmailStr
     kid_name: str = Field(min_length=1, max_length=60)
     kid_age: int = Field(ge=1, le=99)
+    birthday: date | None = None
 
 
 class SlotSummary(BaseModel):
@@ -83,6 +85,10 @@ class PartyDetails(BaseModel):
 
     confirmation_code: str | None
     first_name: str | None
+    # The birthday child, shown only once booked (never on a pending hold).
+    kid_name: str | None = None
+    kid_age: int | None = None
+    birthday: date | None = None
     package: str
     package_label: str
     day_label: str
@@ -135,6 +141,7 @@ class RequestCreate(BaseModel):
     email: EmailStr
     kid_name: str | None = Field(default=None, max_length=60)
     kid_age: int | None = Field(default=None, ge=1, le=99)
+    birthday: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
 
 

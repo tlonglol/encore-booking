@@ -110,6 +110,7 @@ def _book(db: Session, hold: Hold, event: PaymentEvent) -> Booking:
         email=hold.email,
         kid_name=hold.kid_name,
         kid_age=hold.kid_age,
+        birthday=hold.birthday,
         notes=hold.notes,
         square_payment_id=event.payment_id,
         square_order_id=event.order_id or "",
