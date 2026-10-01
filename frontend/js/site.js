@@ -56,7 +56,8 @@
         return el("div", { class: "pkg-card" + (featured ? " featured" : ""), "data-tier": p.key }, [
           el("div", { class: "pkg-bar" }),
           el("div", { class: "pkg-header" }, [
-            featured ? el("div", {}, [el("span", { class: "popular-tag", text: "Most Popular" })]) : null,
+            // Every card reserves this row so names and prices line up across the three.
+            el("div", { class: "pkg-tag-slot" }, featured ? [el("span", { class: "popular-tag", text: "Most Popular" })] : []),
             el("div", { class: "pkg-name", text: p.label }),
             el("div", { class: "pkg-capacity", text: `Up to ${p.included_kids} kids · ${p.hours} hours` }),
             el("div", { class: "pkg-price-row" }, [
