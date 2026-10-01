@@ -1567,6 +1567,8 @@ img { max-width: 100%; }
 /* Dots carry the line as one unit; the leading one disappears when the line wraps (below). */
 .hold-timer:not(:empty)::before,
 .hold-change::before { content: "\00b7"; margin-right: 10px; color: var(--gray); font-weight: 400; }
+/* inline-block keeps the button's underline from running under its own separator dot */
+.hold-change::before { display: inline-block; text-decoration: none; }
 .hold-change {
   font-family: var(--condensed);
   font-size: 12px;
