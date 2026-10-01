@@ -1412,3 +1412,7 @@ img { max-width: 100%; }
 .bday-card .date-seg { padding-top: 1px; padding-bottom: 1px; }
 .bday-card .date-seg .seg { padding-top: 5px; padding-bottom: 5px; }
 .seg-cal { height: 28px; }
+
+/* Tighter gap under the step intro, so the controls sit closer to the sentence that introduces them. */
+.step-head { margin-bottom: 0.5rem; }
+.step-sub { margin-top: 0.4rem; }
