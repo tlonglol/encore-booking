@@ -31,6 +31,9 @@
     catalog: null,
     days: [],
     weekendDefault: "open",
+    weekends: null,
+    maxWeekends: 52,
+    loadingMore: false,
     today: null,
     firstBookable: null,
     quote: null,
@@ -455,8 +458,11 @@
     if (!form.hidden) form.querySelector("input").focus();
   }
 
+  const MORE_STEP = 8;
+
   async function loadGrid() {
-    const { status, data } = await api("/api/availability");
+    const query = ui.weekends ? `?weekends=${ui.weekends}` : "";
+    const { status, data } = await api(`/api/availability${query}`);
     if (status !== 200) {
       const slots = $("slots");
       if (slots) slots.replaceChildren(el("p", { class: "notice error", text: detailText(data, "Couldn't load dates. Refresh to try again.") }));
@@ -464,8 +470,17 @@
     }
     ui.days = data.days;
     ui.weekendDefault = data.weekend_default;
+    ui.weekends = data.weekends;
+    ui.maxWeekends = data.max_weekends;
     ui.today = data.today;
     ui.firstBookable = data.first_bookable_date;
+    // A date held further out than the list reaches must stay visible: widen the list to cover it.
+    const last = data.days[data.days.length - 1].date;
+    if (draft.date && draft.date > last && ui.weekends < ui.maxWeekends) {
+      const gap = (new Date(draft.date + "T12:00:00") - new Date(last + "T12:00:00")) / DAY_MS;
+      ui.weekends = Math.min(ui.maxWeekends, ui.weekends + Math.ceil(gap / 7) + 1);
+      return loadGrid();
+    }
     const input = $("weekday-date");
     if (input) input.min = data.first_bookable_date;
     if (ui.picked && ui.picked.slot_id) {
@@ -551,8 +566,42 @@
             ),
           ])
         )
-      )
+      ),
+      moreWeekends()
     );
+  }
+
+  // Loads further weekends on demand, MORE_STEP at a time, up to the server's cap.
+  function moreWeekends() {
+    if (!ui.weekends) return null;
+    if (ui.weekends >= ui.maxWeekends) {
+      return el("p", { class: "more-end", text: "That's as far ahead as we book online. For later dates, call (646) 203-8087 or get notified below." });
+    }
+    return el("div", { class: "more-wrap" }, [
+      el("button", {
+        type: "button",
+        class: "more-btn",
+        id: "more-weekends",
+        disabled: ui.loadingMore,
+        "aria-expanded": "false",
+        text: ui.loadingMore ? "Loading…" : "Show more weekends",
+        onclick: showMore,
+      }),
+    ]);
+  }
+
+  async function showMore() {
+    if (ui.loadingMore) return;
+    ui.loadingMore = true;
+    renderGrid();
+    ui.weekends = Math.min(ui.maxWeekends, (ui.weekends || 8) + MORE_STEP);
+    await loadGrid();
+    ui.loadingMore = false;
+    renderGrid();
+    // Put the first newly loaded weekend in view so it is obvious something appeared.
+    const groups = document.querySelectorAll(".wk-group");
+    const firstNew = groups[Math.max(0, groups.length - MORE_STEP)];
+    if (firstNew) firstNew.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
   }
 
   // Tab switch: the prices change colour (a CSS crossfade) and the numbers swap at once.

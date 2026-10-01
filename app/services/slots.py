@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.models import Slot
 from app.timeutil import first_bookable_date, is_weekend, slot_start_utc, window_days
 
+MAX_WEEKENDS = 52  # a year out; the cap on how far a parent can expand the date list
+
 OPEN = "open"
 HELD = "held"
 BOOKED = "booked"

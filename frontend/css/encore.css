@@ -1217,3 +1217,21 @@ img { max-width: 100%; }
 }
 .compare-btn::after { content: '⇄'; font-size: 14px; color: var(--blue-light); }
 .compare-btn:hover { background: rgba(26, 116, 204, 0.28); }
+
+/* Show more weekends */
+.more-wrap { display: flex; justify-content: center; margin-top: 1.25rem; }
+.more-btn {
+  background: rgba(26, 116, 204, 0.1);
+  border: 1px solid var(--blue-light);
+  border-radius: 5px;
+  padding: 11px 22px;
+  font-family: var(--condensed);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #cfe4ff;
+}
+.more-btn:hover:not(:disabled) { background: rgba(26, 116, 204, 0.26); }
+.more-btn:disabled { opacity: 0.6; }
+.more-end { text-align: center; margin-top: 1.25rem; font-size: 14px; color: var(--gray-light); }

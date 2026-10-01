@@ -123,3 +123,36 @@ def test_weekends_are_request_only_in_request_mode(db: Session, monkeypatch: pyt
     assert slot_days
     assert {d["status"] for d in slot_days} <= {"request", "past", "held", "booked", "blocked"}
     assert not any(d["status"] == "open" for d in body["days"])
+
+
+def _weekend_dates(body: dict) -> list[str]:  # type: ignore[type-arg]
+    from datetime import date as _date
+
+    return [d["date"] for d in body["days"] if _date.fromisoformat(d["date"]).weekday() >= 5]
+
+
+def test_more_weekends_on_demand(db: Session) -> None:
+    default = client().get("/api/availability").json()
+    assert default["weekends"] == 8 and default["max_weekends"] == 52
+    expanded = client().get("/api/availability?weekends=16").json()
+    assert expanded["weekends"] == 16
+    assert len(_weekend_dates(expanded)) > len(_weekend_dates(default))
+    assert _weekend_dates(expanded)[: len(_weekend_dates(default))] == _weekend_dates(default)
+
+
+def test_expanded_weekends_obey_the_same_rules(db: Session) -> None:
+    body = client().get("/api/availability?weekends=24").json()
+    far = [d for d in body["days"] if d["slot_id"] is not None and d["date"] > client().get("/api/availability").json()["days"][-1]["date"]]
+    assert far, "weekends beyond the default window exist"
+    assert {d["status"] for d in far} == {"open"}
+    assert all(d["time_label"] == "10:00 AM" for d in far)
+    # a far weekend can be held like any other
+    from tests.helpers import client_from, start_hold
+
+    assert start_hold(client_from("203.0.113.170"), far[0]["slot_id"]).status_code == 201
+
+
+def test_weekend_count_is_capped_by_the_server() -> None:
+    assert client().get("/api/availability?weekends=52").status_code == 200
+    assert client().get("/api/availability?weekends=53").status_code == 422
+    assert client().get("/api/availability?weekends=0").status_code == 422
