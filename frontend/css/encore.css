@@ -1508,3 +1508,24 @@ img { max-width: 100%; }
 }
 .bday-card .date-seg .seg-cal:hover { background: rgba(26, 116, 204, 0.3); color: #cfe4ff; }
 .bday-card .date-seg .seg-cal:focus-visible { outline: 2px solid var(--blue-light); outline-offset: -2px; }
+
+/* Transient delta chip: every change to the running total attributes itself, then gets out of the way.
+   It is inserted already visible (no entry animation) and fades out, the same restraint as the price crossfade. */
+.rail-total-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.rail-delta {
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 3px;
+  opacity: 1;
+  transition: opacity 400ms ease;
+}
+.rail-delta:not(.show) { opacity: 0; }
+.rail-delta.add { color: var(--tier); background: color-mix(in srgb, var(--tier) 15%, transparent); }
+.rail-delta.remove { color: var(--gray-light); background: rgba(255, 255, 255, 0.06); }
+@media (prefers-reduced-motion: reduce) { .rail-delta { transition: none; } }
+@media (min-width: 769px) { .rail-delta { font-size: 12px; } }

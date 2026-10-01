@@ -46,6 +46,9 @@
     popover: null,
     picked: null,
     birthdayNote: "",
+    delta: null,
+    pendingDelta: null,
+    deltaTimer: null,
     dead: null,
     done: null,
   };
@@ -139,6 +142,12 @@
     if (seq !== quoteSeq) return;
     $("rail-money").classList.remove("pending");
     if (status === 200) ui.quote = data;
+    if (ui.pendingDelta) {
+      ui.delta = ui.pendingDelta;
+      ui.pendingDelta = null;
+      clearTimeout(ui.deltaTimer);
+      ui.deltaTimer = setTimeout(hideDelta, DELTA_MS);
+    }
     renderMoney();
     renderAdvance();
     if (ui.step === "addons") renderOverage();
@@ -264,6 +273,35 @@
     return ui.step === "info" && !requesting();
   }
 
+  const DELTA_MS = 1500;
+
+  function catalogAddon(key) {
+    return ui.catalog.addons.find((addon) => addon.key === key);
+  }
+
+  function ordinal(n) {
+    const teens = n % 100;
+    if (teens >= 11 && teens <= 13) return `${n}th`;
+    return n + (["th", "st", "nd", "rd"][n % 10] || "th");
+  }
+
+  // "+$60 VR Gaming", "−$40 Pizza Pack", "+$35 · 26th kid". The sign is always shown.
+  function deltaText(cents, name, dotted) {
+    return `${cents > 0 ? "+" : "−"}${money(Math.abs(cents))}${dotted ? " · " : " "}${name}`;
+  }
+
+  // Held until the new total lands, so the chip and the number it explains appear together.
+  function queueDelta(cents, name, dotted) {
+    if (!cents) return;
+    ui.pendingDelta = { text: deltaText(cents, name, dotted), add: cents > 0 };
+  }
+
+  function hideDelta() {
+    const chip = $("rail-delta");
+    if (chip) chip.classList.remove("show");
+    ui.delta = null;
+  }
+
   // The payment step's receipt: line items, then a divider, then Total / Due today / Due at the party.
   // Tax is never left unsaid: either the server priced a Sales tax line, or the note says it is included.
   function receipt(q) {
@@ -310,7 +348,10 @@
           receipt(q),
         ]
       : [
-          el("div", { class: "rail-total" + fade("total"), text: money(q.total_cents) }),
+          el("div", { class: "rail-total-line" }, [
+            el("span", { class: "rail-total" + fade("total"), text: money(q.total_cents) }),
+            ui.delta ? el("span", { class: `rail-delta show ${ui.delta.add ? "add" : "remove"}`, id: "rail-delta", text: ui.delta.text }) : null,
+          ]),
           // "$100 today" in the accent, then the remainder muted on the same line: the two amounts say it all.
           el("div", { class: "rail-today" }, [
             el("b", { class: "rail-today-amt" + fade("deposit"), text: `${money(q.deposit_cents)} today` }),
@@ -318,9 +359,15 @@
           ]),
         ];
     // replaceChildren stringifies a null child, so the DETAILS button is filtered out, not passed as null.
+    const priced = q.line_items.filter((item) => !item.included).length;
     const details = payment
       ? null
-      : el("button", { type: "button", class: "rail-details", text: "Details", onclick: () => openCompare("summary") });
+      : el("button", {
+          type: "button",
+          class: "rail-details",
+          text: `Details · ${priced} item${priced === 1 ? "" : "s"}`,
+          onclick: () => openCompare("summary"),
+        });
     box.replaceChildren(...[...lines, details].filter(Boolean));
   }
 
@@ -1167,7 +1214,15 @@
       if (input.value !== String(value) && document.activeElement !== input) input.value = String(value);
     }
     function set(value) {
-      draft.kids = Math.min(ui.catalog.max_kids, Math.max(ui.catalog.min_kids, value));
+      const from = kidsValue();
+      const to = Math.min(ui.catalog.max_kids, Math.max(ui.catalog.min_kids, value));
+      const billable = (n) => Math.max(0, n - cap());
+      const extra = billable(to) - billable(from);
+      if (extra) {
+        const name = Math.abs(extra) === 1 ? `${ordinal(Math.max(from, to))} kid` : `${Math.abs(extra)} kids`;
+        queueDelta(extra * ui.catalog.additional_kid_cents, name, true);
+      }
+      draft.kids = to;
       input.value = String(draft.kids);
       sync();
       requote();
@@ -1196,6 +1251,10 @@
   }
 
   function setAddon(key, quantity) {
+    const addon = catalogAddon(key);
+    const dropsReel = key === "tournament" && !quantity && Boolean(draft.addons.highlight_reel);
+    const cents = addon.price_cents + (dropsReel ? catalogAddon("highlight_reel").price_cents : 0);
+    queueDelta(quantity > 0 ? cents : -cents, addon.label, false);
     if (quantity > 0) draft.addons[key] = quantity;
     else delete draft.addons[key];
     if (key === "tournament" && !quantity) delete draft.addons.highlight_reel;
@@ -1260,6 +1319,7 @@
     }
     function set(value) {
       const clamped = Math.min(max, Math.max(0, value));
+      queueDelta((clamped - qty()) * addon.price_cents, addon.label, false);
       if (clamped > 0) draft.addons[addon.key] = clamped;
       else delete draft.addons[addon.key];
       input.value = String(clamped);
