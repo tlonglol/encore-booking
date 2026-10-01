@@ -235,7 +235,7 @@ img { max-width: 100%; }
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  background: var(--blue);
+  background: #134a88; /* a shade under --blue: the live page's tag renders darker than its stylesheet value */
   color: #fff;
   padding: 3px 10px;
   border-radius: 2px;
@@ -255,7 +255,7 @@ img { max-width: 100%; }
 .pkg-overage { font-family: var(--condensed); font-size: 11px; letter-spacing: 0.05em; color: var(--gray); }
 .pkg-overage span { color: var(--blue-light); }
 .pkg-body { padding: 1.25rem 1.5rem; flex: 1; }
-.pkg-tag-slot { min-height: 1.6rem; }
+.pkg-tag-slot { min-height: 2.45rem; }
 .feature-row {
   display: flex;
   align-items: center;
