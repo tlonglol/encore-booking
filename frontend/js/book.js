@@ -46,6 +46,7 @@
     popover: null,
     picked: null,
     birthdayNote: "",
+    policyOpen: false,
     delta: null,
     pendingDelta: null,
     deltaTimer: null,
@@ -190,6 +191,7 @@
   function render(step) {
     ui.step = step;
     ui.popover = null;
+    ui.policyOpen = false;
     save();
     if (ui.done) return renderDone();
     if (ui.dead) return renderDead();
@@ -274,6 +276,48 @@
   }
 
   const DELTA_MS = 1500;
+  const FREE_CANCEL_DAYS = 7;
+
+  // The policy promises "up to 7 days before your party"; naming the actual date is more concrete than
+  // asking a parent to count backwards. The precise hour lives behind "details", since the free window
+  // really closes at the party's start time on that day.
+  function policyCutoff() {
+    if (!draft.date) return null;
+    const cutoff = new Date(new Date(draft.date + "T12:00:00").getTime() - FREE_CANCEL_DAYS * DAY_MS);
+    return cutoff.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  function renderPolicy() {
+    const box = $("rail-policy");
+    if (!box) return;
+    if (!onPaymentStep()) {
+      box.hidden = true;
+      box.replaceChildren();
+      return;
+    }
+    const by = policyCutoff();
+    const full = by
+      ? `Free cancel or reschedule up to ${FREE_CANCEL_DAYS} days before your party, until ${by} at ${draft.timeLabel || "10:00 AM"}. After that your deposit isn't refundable, but you can still reschedule once.`
+      : C.REFUND_PROMISE;
+    box.hidden = false;
+    box.replaceChildren(
+      ...[
+        el("span", { text: by ? `Free cancel or reschedule until ${by}` : "Free cancel or reschedule up to 7 days before" }),
+        " · ",
+        el("button", {
+          type: "button",
+          class: "policy-more",
+          "aria-expanded": String(ui.policyOpen),
+          text: ui.policyOpen ? "less" : "details",
+          onclick: () => {
+            ui.policyOpen = !ui.policyOpen;
+            renderPolicy();
+          },
+        }),
+        ui.policyOpen ? el("span", { class: "policy-full", text: full }) : null,
+      ].filter(Boolean)
+    );
+  }
 
   function catalogAddon(key) {
     return ui.catalog.addons.find((addon) => addon.key === key);
@@ -380,6 +424,7 @@
       return;
     }
     button.hidden = false;
+    renderPolicy();
     if (ui.step === "date") {
       button.onclick = confirmDate;
       button.disabled = !ui.picked || ui.busy;
@@ -406,6 +451,7 @@
     }
     button.disabled = ui.busy;
     button.textContent = requesting() ? "Send request" : `Pay ${money(ui.quote ? ui.quote.deposit_cents : 10000)} & lock it in`;
+    renderPolicy();
     button.onclick = pay;
     note.textContent = requesting()
       ? "No payment now. Nothing is booked until we confirm with you."
@@ -1404,7 +1450,6 @@
         requesting() ? timeField() : null,
       ]),
       el("div", { class: "pay-summary", id: "pay-summary" }),
-      requesting() ? null : el("p", { class: "risk-line", text: C.REFUND_PROMISE }),
       el("div", { id: "pay-error", role: "alert" })
     );
     ["email", "parent_name", "phone", "kid_name", "kid_age"].forEach((id) => {
