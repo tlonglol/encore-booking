@@ -1180,3 +1180,20 @@ img { max-width: 100%; }
   text-shadow: 0 0 8px color-mix(in srgb, var(--tier-line-strong) 45%, transparent);
 }
 .wk-card.yours .wk-price { color: var(--tier-bright); }
+
+/* Primary tier buttons (rail forward button, Select Plan): a mid-strength fill of the plan colour with
+   white text, chosen for contrast (about 5:1 on all three tiers) instead of a bright fill with dark text. */
+[data-tier="standard"] { --tier-btn: #13808e; }
+[data-tier="plus"] { --tier-btn: #1b63bb; }
+[data-tier="premium"] { --tier-btn: #6b49dc; }
+[data-tier="none"] { --tier-btn: var(--blue); }
+#advance, .pick-card .pick-go {
+  background: var(--tier-btn, var(--blue));
+  border: 1px solid var(--tier);
+  color: #fff;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--tier) 28%, transparent);
+}
+#advance:hover:not(:disabled), .pick-card .pick-go:hover { filter: brightness(1.15); }
+#advance:disabled { background: #1c2a3a; border-color: #1c2a3a; color: var(--gray); box-shadow: none; text-shadow: none; }
