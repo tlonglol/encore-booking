@@ -1444,3 +1444,5 @@ img { max-width: 100%; }
 .bday-card .date-seg { padding-right: 9px; }
 .bday-card .date-seg .seg { width: 27px; }
 .bday-card .date-seg .seg-y { width: 44px; }
+.bday-card .date-seg .seg { width: 34px; padding-left: 0; padding-right: 0; }
+.bday-card .date-seg .seg-y { width: 50px; }
