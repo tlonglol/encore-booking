@@ -54,6 +54,12 @@ class Hold(Base):
         CheckConstraint(_in("package", PACKAGES), name="holds_package_valid"),
         CheckConstraint("kids BETWEEN 1 AND 30", name="holds_kids_range"),
         CheckConstraint("total_cents >= 0 AND deposit_cents > 0", name="holds_money_positive"),
+        # A hold that carries a payment link was checked out, so its snapshot and contact are complete.
+        CheckConstraint(
+            "square_order_id IS NULL OR (package IS NOT NULL AND kids IS NOT NULL AND total_cents IS NOT NULL"
+            " AND first_name IS NOT NULL AND phone IS NOT NULL AND email IS NOT NULL)",
+            name="holds_checkout_complete",
+        ),
         # The slot-exclusivity guarantee: at most one pending or booked hold per slot.
         Index(
             "holds_one_active_per_slot",
@@ -78,16 +84,19 @@ class Hold(Base):
     slot_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("slots.id"))
     status: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    package: Mapped[str] = mapped_column(Text)
-    kids: Mapped[int] = mapped_column(SmallInteger)
-    addons: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    line_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
-    total_cents: Mapped[int] = mapped_column(Integer)
+    # Snapshot and contact are NULL until checkout: the funnel holds the slot first and collects the rest later.
+    package: Mapped[str | None] = mapped_column(Text)
+    kids: Mapped[int | None] = mapped_column(SmallInteger)
+    addons: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    line_items: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    total_cents: Mapped[int | None] = mapped_column(Integer)
     deposit_cents: Mapped[int] = mapped_column(Integer)
-    first_name: Mapped[str] = mapped_column(Text)
-    last_name: Mapped[str] = mapped_column(Text)
-    phone: Mapped[str] = mapped_column(Text)
-    email: Mapped[str] = mapped_column(Text)
+    first_name: Mapped[str | None] = mapped_column(Text)
+    last_name: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    kid_name: Mapped[str | None] = mapped_column(Text)
+    kid_age: Mapped[int | None] = mapped_column(SmallInteger)
     notes: Mapped[str | None] = mapped_column(Text)
     client_ip: Mapped[str | None] = mapped_column(INET)
     square_order_id: Mapped[str | None] = mapped_column(Text)
@@ -127,6 +136,8 @@ class Booking(Base):
     last_name: Mapped[str] = mapped_column(Text)
     phone: Mapped[str] = mapped_column(Text)
     email: Mapped[str] = mapped_column(Text)
+    kid_name: Mapped[str | None] = mapped_column(Text)
+    kid_age: Mapped[int | None] = mapped_column(SmallInteger)
     notes: Mapped[str | None] = mapped_column(Text)
     square_payment_id: Mapped[str] = mapped_column(Text, unique=True)
     square_order_id: Mapped[str] = mapped_column(Text)
@@ -178,12 +189,24 @@ class PartyRequest(Base):
     last_name: Mapped[str] = mapped_column(Text)
     phone: Mapped[str] = mapped_column(Text)
     email: Mapped[str] = mapped_column(Text)
+    kid_name: Mapped[str | None] = mapped_column(Text)
+    kid_age: Mapped[int | None] = mapped_column(SmallInteger)
     notes: Mapped[str | None] = mapped_column(Text)
     client_ip: Mapped[str | None] = mapped_column(INET)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class WaitlistEntry(Base):
+    # A parent who wants to hear when new dates open. Email only, captured from the grid page.
+    __tablename__ = "waitlist"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    email: Mapped[str] = mapped_column(Text, unique=True)
+    client_ip: Mapped[str | None] = mapped_column(INET)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SquareEvent(Base):

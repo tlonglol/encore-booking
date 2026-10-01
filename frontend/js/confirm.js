@@ -34,21 +34,73 @@
     ]);
   }
 
+  function utcStamp(iso, addHours) {
+    const d = new Date(new Date(iso).getTime() + (addHours || 0) * 3600000);
+    return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  }
+
+  function calendarButtons(party) {
+    const google = new URL("https://calendar.google.com/calendar/render");
+    google.searchParams.set("action", "TEMPLATE");
+    google.searchParams.set("text", `Encore Esports ${party.package_label} party`);
+    google.searchParams.set("dates", `${utcStamp(party.starts_at)}/${utcStamp(party.starts_at, party.hours)}`);
+    google.searchParams.set("location", "Encore Esports, 538 Main St, 2nd floor, New Rochelle, NY");
+    google.searchParams.set("details", `Confirmation ${party.confirmation_code}. Balance ${money(party.balance_cents)} due day of party.`);
+    const apiOrigin = (window.ENCORE_CONFIG && window.ENCORE_CONFIG.apiOrigin) || "";
+    return el("div", { class: "cal-buttons" }, [
+      el("a", { class: "btn btn-ghost btn-sm", href: google.toString(), target: "_blank", rel: "noopener", text: "Add to Google Calendar" }),
+      el("a", { class: "btn btn-ghost btn-sm", href: `${apiOrigin}/api/bookings/${encodeURIComponent(party.confirmation_code)}/calendar.ics`, text: "Apple / .ics" }),
+    ]);
+  }
+
+  function renderBar(party) {
+    document.getElementById("confirm-bar").hidden = false;
+    document.body.classList.add("has-quote-bar");
+    document.getElementById("quote-total").textContent = money(party.total_cents);
+    document.getElementById("quote-split").replaceChildren(
+      el("b", { text: `${money(party.deposit_cents)} paid` }),
+      el("br"),
+      `${money(party.balance_cents)} day of party`
+    );
+    document.getElementById("quote-lines").replaceChildren(
+      ...party.line_items.map((item) =>
+        el("li", {}, [
+          el("span", { text: item.quantity > 1 ? `${item.label} × ${item.quantity}` : item.label }),
+          item.included ? el("span", { class: "inc", text: "Included" }) : el("span", { text: money(item.amount_cents) }),
+        ])
+      )
+    );
+    const toggle = document.getElementById("quote-toggle");
+    toggle.addEventListener("click", () => {
+      const lines = document.getElementById("quote-lines");
+      lines.hidden = !lines.hidden;
+      toggle.textContent = lines.hidden ? "Details" : "Hide";
+    });
+  }
+
   function where() {
     return el("p", { class: "fine" }, ["538 Main St, 2nd floor, entrance on Division St · New Rochelle, NY · ", el("a", { href: "tel:+16462038087", text: "(646) 203-8087" })]);
   }
 
   function showBooked(party) {
-    store("encore.hold", null);
+    store("encore.funnel", null);
     view.replaceChildren(
       el("p", { class: "hold-caption", text: party.first_name ? `You're all set, ${party.first_name}` : "You're all set" }),
       title("You're", "booked!"),
       el("p", { class: "muted", text: "Confirmation code" }),
       el("div", { class: "code-box", text: party.confirmation_code }),
-      el("p", { class: "muted small", text: "A text with these details is on its way. Save this page: its link is your confirmation." }),
+      el("p", { class: "muted small", text: "A text and an email with these details are on their way. Save this page: its link is your confirmation." }),
       details(party),
+      calendarButtons(party),
+      el("p", { class: "fine", text: "What happens next: Encore will text you the week of your party." }),
+      el("p", { class: "fine" }, [
+        "You can add Pizza Packs, Drinks, or VR anytime before the party — text ",
+        el("a", { href: "sms:+16462038087", text: "(646) 203-8087" }),
+        ".",
+      ]),
       where()
     );
+    renderBar(party);
   }
 
   function showMessage(line1, line2, message, actions) {
@@ -86,7 +138,7 @@
           }
           return;
         case "paid_after_expiry":
-          store("encore.hold", null);
+          store("encore.funnel", null);
           showMessage(
             "Payment",
             "received",
@@ -94,11 +146,11 @@
           );
           return;
         case "expired":
-          store("encore.hold", null);
+          store("encore.funnel", null);
           showMessage("Hold", "expired", "Your 15-minute hold ran out before payment arrived, so the date was released. If you did pay, we'll call you.", [bookAgain()]);
           return;
         case "cancelled":
-          store("encore.hold", null);
+          store("encore.funnel", null);
           showMessage("Hold", "cancelled", "This hold was cancelled, and no booking was made. Questions? Call (646) 203-8087.", [bookAgain()]);
           return;
         default:

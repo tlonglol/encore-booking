@@ -1,7 +1,7 @@
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from tests.helpers import admin_client, client, client_from, create_hold_via_api, deliver, hold_body, payment_event
+from tests.helpers import admin_client, client, client_from, create_hold_via_api, deliver, payment_event, start_hold
 
 
 def _book(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
@@ -29,7 +29,9 @@ def test_bookings_list_shows_what_the_owner_needs(db: Session) -> None:
     assert booking["balance_cents"] == 44400
     assert booking["deposit_status"] == "paid"
     assert booking["phone"] == "+19145550001"
-    assert booking["notes"] == "Nut allergy at one guest"
+    assert booking["kid_name"] == "Sam"
+    assert booking["kid_age"] == 8
+    assert booking["notes"] is None, "the funnel form has no notes field"
     assert booking["time_label"] == "10:00 AM"
     assert booking["full_refund"] is True
 
@@ -51,7 +53,7 @@ def test_cancel_frees_the_slot_and_records_refund_data(db: Session, engine: Engi
                  " JOIN holds h ON h.id = b.hold_id")
         ).one()
     assert row.cancelled_at is not None and row.status == "cancelled"
-    retry = client_from("203.0.113.200").post("/api/holds", json=hold_body(row.slot_id, 42))
+    retry = start_hold(client_from("203.0.113.200"), row.slot_id)
     assert retry.status_code == 201, "the cancelled date is bookable again"
 
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>Lock It In · Encore Esports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/encore.css">
+</head>
+<body class="has-quote-bar">
+  <nav class="nav">
+    <a class="nav-logo" href="https://encoregaming.us">ENCORE <span>ESPORTS</span></a>
+    <a class="nav-cta" href="tel:+16462038087">(646) 203-8087</a>
+  </nav>
+
+  <main class="wrap">
+    <ol class="steps" id="steps" aria-label="Booking steps"></ol>
+    <div class="hold-line" id="hold-line"></div>
+    <div id="released" hidden></div>
+
+    <section class="book-panel" id="pay-panel" aria-labelledby="pay-title" style="margin-top:1.5rem">
+      <h2 class="book-title" id="pay-title">Lock it in</h2>
+      <form id="pay-form" class="form-grid" novalidate>
+        <div class="field full"><label for="email">Parent email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
+        <div class="field"><label for="parent_name">Parent name</label><input id="parent_name" name="parent_name" autocomplete="name" placeholder="Your name" required maxlength="120"></div>
+        <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
+        <div class="field"><label for="kid_name">Kid's name</label><input id="kid_name" name="kid_name" placeholder="The birthday kid" required maxlength="60"></div>
+        <div class="field"><label for="kid_age">Kid's age</label><input id="kid_age" name="kid_age" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 9" required maxlength="2"></div>
+        <div class="field"><label for="kids">Estimated headcount</label><input id="kids" name="kids" type="text" inputmode="numeric" pattern="[0-9]*" required maxlength="2"></div>
+        <div class="field" id="time-field" hidden><label for="preferred_time">Preferred start time</label>
+          <select id="preferred_time" name="preferred_time">
+            <option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option>
+            <option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option>
+            <option value="13:00">1:00 PM</option><option value="14:00">2:00 PM</option>
+            <option value="15:00">3:00 PM</option><option value="16:00" selected>4:00 PM</option>
+            <option value="17:00">5:00 PM</option><option value="18:00">6:00 PM</option>
+            <option value="19:00">7:00 PM</option><option value="20:00">8:00 PM</option>
+          </select>
+        </div>
+      </form>
+
+      <div class="pay-summary details">
+        <div class="roll">
+          <div class="quote-total" id="summary-total">—</div>
+          <button class="quote-toggle" id="summary-toggle" type="button" aria-expanded="false" aria-controls="summary-lines">Details</button>
+        </div>
+        <ul class="quote-lines" id="summary-lines" hidden></ul>
+        <p class="deposit-math" id="deposit-math"></p>
+      </div>
+
+      <p class="risk-line" id="risk-line">Free reschedule up to 7 days before your party. Deposit fully refundable for 14 days.</p>
+      <div id="pay-error" role="alert"></div>
+      <button class="btn btn-primary btn-block" id="pay-button" type="button">Pay $100 &amp; lock it in</button>
+      <p class="fine" id="pay-fine">Secure checkout by Square. You'll come right back here for your confirmation.</p>
+    </section>
+
+    <section class="book-panel hold-panel" id="request-done" hidden aria-live="polite">
+      <p class="hold-caption">Request sent</p>
+      <h2 class="book-title">We'll text you</h2>
+      <p class="summary-line" id="request-summary"></p>
+      <p class="book-sub">No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087.</p>
+      <a class="btn btn-ghost" href="index.html">Back to the dates</a>
+    </section>
+  </main>
+
+  <div class="quote-bar">
+    <div class="quote-inner">
+      <div class="quote-main">
+        <div class="quote-total" id="quote-total">—</div>
+        <div class="quote-split" id="quote-split"></div>
+        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines" hidden>Details</button>
+      </div>
+      <ul class="quote-lines" id="quote-lines" hidden></ul>
+      <div class="quote-cta" id="quote-cta" hidden></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/funnel.js"></script>
+  <script src="js/checkout.js"></script>
+</body>
+</html>

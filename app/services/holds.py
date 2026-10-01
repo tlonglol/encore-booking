@@ -1,4 +1,5 @@
 import ipaddress
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -16,7 +17,7 @@ HOLD_MINUTES = 15
 MAX_ACTIVE_HOLDS_PER_IP = 5
 SLOT_INDEX = "holds_one_active_per_slot"
 
-# Advisory lock namespaces, always taken in this order so two hold requests cannot deadlock.
+# Advisory lock namespaces, always taken in this order so two checkout requests cannot deadlock.
 LOCK_PHONE, LOCK_EMAIL, LOCK_IP = 1, 2, 3
 
 
@@ -32,6 +33,14 @@ class SlotUnavailable(Exception):
     pass
 
 
+class HoldNotPending(Exception):
+    """The hold exists but is expired, cancelled, or already booked; checkout must change nothing."""
+
+    def __init__(self, status: str) -> None:
+        super().__init__(status)
+        self.status = status
+
+
 class HoldLimitReached(Exception):
     def __init__(self, reason: str, expires_at: datetime) -> None:
         super().__init__(reason)
@@ -39,8 +48,7 @@ class HoldLimitReached(Exception):
 
 
 @dataclass(frozen=True)
-class HoldInput:
-    slot_id: int
+class CheckoutInput:
     package: str
     kids: int
     addons: dict[str, int]
@@ -48,8 +56,8 @@ class HoldInput:
     last_name: str
     phone: str
     email: str
-    notes: str | None
-    client_ip: str | None
+    kid_name: str
+    kid_age: int
 
 
 def normalize_phone(raw: str) -> str:
@@ -72,45 +80,29 @@ def normalize_ip(raw: str | None) -> str | None:
         return None
 
 
-def _lock_identities(db: Session, phone: str, email: str, client_ip: str | None) -> None:
-    """Serializes concurrent holds for the same phone, email, or IP so the cap check below cannot be raced."""
-    db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_PHONE, "key": phone})
-    db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_EMAIL, "key": email})
-    if client_ip:
-        db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_IP, "key": client_ip})
-
-
-def _enforce_caps(db: Session, phone: str, email: str, client_ip: str | None) -> None:
+def _enforce_ip_cap(db: Session, client_ip: str | None) -> None:
+    """Creation is anonymous, so the IP cap is the only one that can apply here."""
+    if client_ip is None:
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_IP, "key": client_ip})
     row = db.execute(
         text(
-            """
-            SELECT max(expires_at) FILTER (WHERE phone = :phone) AS phone_expiry,
-                   max(expires_at) FILTER (WHERE email = :email) AS email_expiry,
-                   count(*) FILTER (WHERE client_ip = CAST(:ip AS inet)) AS ip_count,
-                   min(expires_at) FILTER (WHERE client_ip = CAST(:ip AS inet)) AS ip_expiry
-            FROM holds
-            WHERE status = 'pending_payment' AND expires_at > now()
-              AND (phone = :phone OR email = :email OR client_ip = CAST(:ip AS inet))
-            """
+            "SELECT count(*) AS held, min(expires_at) AS soonest FROM holds"
+            " WHERE status = 'pending_payment' AND expires_at > now() AND client_ip = CAST(:ip AS inet)"
         ),
-        {"phone": phone, "email": email, "ip": client_ip},
+        {"ip": client_ip},
     ).one()
-    if row.phone_expiry is not None:
-        raise HoldLimitReached("This phone number already has a date on hold.", row.phone_expiry)
-    if row.email_expiry is not None:
-        raise HoldLimitReached("This email already has a date on hold.", row.email_expiry)
-    if row.ip_count >= MAX_ACTIVE_HOLDS_PER_IP:
-        raise HoldLimitReached("Too many dates on hold from this network.", row.ip_expiry)
+    if row.held >= MAX_ACTIVE_HOLDS_PER_IP:
+        raise HoldLimitReached("Too many dates on hold from this network.", row.soonest)
 
 
-def create_hold(db: Session, data: HoldInput, today: date, min_lead_days: int) -> Hold:
-    """One transaction: lock the slot, expire its stale hold, check caps, insert. The unique index picks the winner."""
-    priced = quote(data.package, data.kids, data.addons)
-    phone = normalize_phone(data.phone)
-    email = data.email.strip().lower()
-
+def create_hold(
+    db: Session, slot_id: int, client_ip: str | None, replace_hold_id: uuid.UUID | None, today: date, min_lead_days: int
+) -> Hold:
+    """One transaction: lock the slot, expire its stale hold, swap out the caller's old hold, check the IP cap,
+    insert. The unique index picks the winner. No contact details yet; those arrive at checkout."""
     slot = db.execute(
-        text("SELECT id, local_date, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": data.slot_id}
+        text("SELECT id, local_date, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": slot_id}
     ).one_or_none()
     if slot is None:
         db.rollback()
@@ -127,31 +119,28 @@ def create_hold(db: Session, data: HoldInput, today: date, min_lead_days: int) -
             "UPDATE holds SET status = 'expired', updated_at = now()"
             " WHERE slot_id = :id AND status = 'pending_payment' AND expires_at <= now()"
         ),
-        {"id": data.slot_id},
+        {"id": slot_id},
     )
-    _lock_identities(db, phone, email, data.client_ip)
+    if replace_hold_id is not None:
+        db.execute(
+            text(
+                "UPDATE holds SET status = 'cancelled', updated_at = now()"
+                " WHERE id = :id AND status = 'pending_payment'"
+            ),
+            {"id": replace_hold_id},
+        )
     try:
-        _enforce_caps(db, phone, email, data.client_ip)
+        _enforce_ip_cap(db, client_ip)
     except HoldLimitReached:
         db.rollback()
         raise
 
     hold = Hold(
-        slot_id=data.slot_id,
+        slot_id=slot_id,
         status="pending_payment",
         expires_at=func.now() + timedelta(minutes=HOLD_MINUTES),
-        package=priced.package,
-        kids=priced.kids,
-        addons=priced.addons,
-        line_items=priced.line_items_json(),
-        total_cents=priced.total_cents,
-        deposit_cents=priced.deposit_cents,
-        first_name=data.first_name.strip(),
-        last_name=data.last_name.strip(),
-        phone=phone,
-        email=email,
-        notes=(data.notes or "").strip() or None,
-        client_ip=data.client_ip,
+        deposit_cents=10000,
+        client_ip=client_ip,
     )
     db.add(hold)
     try:
@@ -165,11 +154,90 @@ def create_hold(db: Session, data: HoldInput, today: date, min_lead_days: int) -
     return hold
 
 
+def save_email(db: Session, hold_id: uuid.UUID, email: str) -> bool:
+    """Abandoner recovery: the checkout page persists the email on blur, long before the pay button."""
+    updated = db.execute(
+        text(
+            "UPDATE holds SET email = :email, updated_at = now()"
+            " WHERE id = :id AND status = 'pending_payment' AND square_order_id IS NULL RETURNING id"
+        ),
+        {"id": hold_id, "email": email.strip().lower()},
+    ).scalar_one_or_none()
+    db.commit()
+    return updated is not None
+
+
+def _enforce_contact_caps(db: Session, hold_id: uuid.UUID, phone: str, email: str) -> None:
+    """One active hold per phone and per email, checked when the contact is first known."""
+    db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_PHONE, "key": phone})
+    db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_EMAIL, "key": email})
+    row = db.execute(
+        text(
+            """
+            SELECT max(expires_at) FILTER (WHERE phone = :phone) AS phone_expiry,
+                   max(expires_at) FILTER (WHERE email = :email) AS email_expiry
+            FROM holds
+            WHERE status = 'pending_payment' AND expires_at > now() AND id <> :hold_id
+              AND (phone = :phone OR email = :email)
+            """
+        ),
+        {"phone": phone, "email": email, "hold_id": hold_id},
+    ).one()
+    if row.phone_expiry is not None:
+        raise HoldLimitReached("This phone number already has another date on hold.", row.phone_expiry)
+    if row.email_expiry is not None:
+        raise HoldLimitReached("This email already has another date on hold.", row.email_expiry)
+
+
+def checkout_hold(db: Session, hold_id: uuid.UUID, data: CheckoutInput) -> Hold:
+    """Prices server-side and snapshots everything onto the live hold, in one transaction, under the row lock
+    the webhook also takes. The payment link is created by the caller afterwards; deposit_cents never changes."""
+    priced = quote(data.package, data.kids, data.addons)
+    phone = normalize_phone(data.phone)
+    email = data.email.strip().lower()
+
+    row = db.execute(
+        select(Hold, func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"))
+        .where(Hold.id == hold_id)
+        .with_for_update(of=Hold)
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if row is None:
+        db.rollback()
+        raise SlotNotFound()
+    hold, remaining = row
+    if hold.status != "pending_payment" or remaining <= 0:
+        status = "expired" if hold.status == "pending_payment" else hold.status
+        db.rollback()
+        raise HoldNotPending(status)
+    try:
+        _enforce_contact_caps(db, hold.id, phone, email)
+    except HoldLimitReached:
+        db.rollback()
+        raise
+
+    hold.package = priced.package
+    hold.kids = priced.kids
+    hold.addons = priced.addons
+    hold.line_items = priced.line_items_json()
+    hold.total_cents = priced.total_cents
+    hold.first_name = data.first_name.strip()
+    hold.last_name = data.last_name.strip()
+    hold.phone = phone
+    hold.email = email
+    hold.kid_name = data.kid_name.strip()
+    hold.kid_age = data.kid_age
+    db.commit()
+    db.refresh(hold)
+    return hold
+
+
 @dataclass(frozen=True)
 class HoldState:
     hold: Hold
     status: str
     starts_at: datetime
+    local_date: date
     seconds_remaining: int
     confirmation_code: str | None
 
@@ -179,6 +247,7 @@ def hold_state(db: Session, hold_id: str) -> HoldState | None:
         select(
             Hold,
             Slot.starts_at,
+            Slot.local_date,
             Booking.confirmation_code,
             func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"),
         )
@@ -188,25 +257,15 @@ def hold_state(db: Session, hold_id: str) -> HoldState | None:
     ).one_or_none()
     if row is None:
         return None
-    hold, starts_at, code, remaining = row
+    hold, starts_at, local_date, code, remaining = row
     status = hold.status
     if status == "pending_payment" and remaining <= 0:
         status = "expired"
-    return HoldState(hold, status, starts_at, int(remaining), code)
+    return HoldState(hold, status, starts_at, local_date, int(remaining), code)
 
 
 def attach_payment_link(db: Session, hold: Hold, link_id: str, url: str, order_id: str) -> None:
     hold.square_payment_link_id = link_id
     hold.checkout_url = url
     hold.square_order_id = order_id
-    db.commit()
-
-
-def cancel_pending_hold(db: Session, hold_id: object) -> None:
-    """Frees the slot when checkout could not be started."""
-    db.rollback()
-    db.execute(
-        text("UPDATE holds SET status = 'cancelled', updated_at = now() WHERE id = :id AND status = 'pending_payment'"),
-        {"id": hold_id},
-    )
     db.commit()

@@ -7,14 +7,15 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.services.square import SQUARE_VERSION
 from tests.conftest import FakeSquareApi
-from tests.helpers import client, client_from, hold_body, make_slot, next_saturday
+from tests.helpers import checkout, client, client_from, make_slot, next_saturday, start_hold
 
 
 def test_payment_link_uses_hold_id_as_idempotency_key(db: Session, engine: Engine, square_api: FakeSquareApi) -> None:
     slot = make_slot(db, next_saturday(7))
-    response = client_from("203.0.113.60").post("/api/holds", json=hold_body(slot.id, 1))
-    assert response.status_code == 201
-    hold_id = response.json()["hold_id"]
+    funnel = client_from("203.0.113.60")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    response = checkout(funnel, hold_id, 1)
+    assert response.status_code == 200
     assert response.json()["checkout_url"].startswith("https://sandbox.square.link/")
 
     (sent,) = square_api.requests
@@ -39,16 +40,22 @@ def test_payment_link_uses_hold_id_as_idempotency_key(db: Session, engine: Engin
     assert row.square_payment_link_id == f"link-{hold_id}"
 
 
-def test_square_failure_releases_the_slot(db: Session, engine: Engine, square_api: FakeSquareApi) -> None:
+def test_square_failure_keeps_the_hold_for_a_retry(db: Session, engine: Engine, square_api: FakeSquareApi) -> None:
+    """The parent is at the pay button: their date is not released over a Square blip."""
     slot = make_slot(db, next_saturday(7))
+    funnel = client_from("203.0.113.61")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
     square_api.fail_with = 500
-    response = client_from("203.0.113.61").post("/api/holds", json=hold_body(slot.id, 1))
+    response = checkout(funnel, hold_id, 1)
     assert response.status_code == 502
+    assert "still held" in response.json()["detail"]
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT status FROM holds")).scalar_one() == "cancelled"
+        row = conn.execute(text("SELECT status, square_order_id, total_cents FROM holds")).one()
+    assert row.status == "pending_payment" and row.square_order_id is None
+    assert row.total_cents == 54400, "the snapshot committed; only the link is missing"
     square_api.fail_with = None
-    retry = client_from("203.0.113.61").post("/api/holds", json=hold_body(slot.id, 1))
-    assert retry.status_code == 201, "the cancelled hold neither occupies the slot nor counts toward caps"
+    retry = checkout(funnel, hold_id, 1)
+    assert retry.status_code == 200, "the same hold checks out once Square answers"
 
 
 def test_booking_lookup_by_code(db: Session) -> None:
@@ -78,14 +85,18 @@ def test_dev_fake_payment_runs_the_real_webhook_path(
     monkeypatch.setattr(settings, "square_access_token", "")
     monkeypatch.setattr(settings, "dev_fake_square", True)
     slot = make_slot(db, next_saturday(7))
-    created = client_from("203.0.113.62").post("/api/holds", json=hold_body(slot.id, 1)).json()
-    assert created["checkout_url"] == f"http://testserver/dev-checkout.html?hold={created['hold_id']}"
+    funnel = client_from("203.0.113.62")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    paid = checkout(funnel, hold_id, 1).json()
+    assert paid["checkout_url"] == f"http://testserver/dev-checkout.html?hold={hold_id}"
     assert square_api.requests == []
-    assert client().post(f"/api/dev/fake-payment/{created['hold_id']}").json() == {"outcome": "booked"}
-    assert client().get(f"/api/holds/{created['hold_id']}").json()["status"] == "booked"
+    assert client().post(f"/api/dev/fake-payment/{hold_id}").json() == {"outcome": "booked"}
+    assert client().get(f"/api/holds/{hold_id}").json()["status"] == "booked"
 
 
 def test_dev_fake_payment_refuses_when_real_square_is_configured(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "dev_fake_square", True)
-    hold_id = client_from("203.0.113.63").post("/api/holds", json=hold_body(make_slot(db, next_saturday(7)).id, 1)).json()["hold_id"]
+    funnel = client_from("203.0.113.63")
+    hold_id = start_hold(funnel, make_slot(db, next_saturday(7)).id).json()["hold_id"]
+    checkout(funnel, hold_id, 1)
     assert client().post(f"/api/dev/fake-payment/{hold_id}").status_code == 404

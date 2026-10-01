@@ -258,3 +258,23 @@ def test_no_email_for_an_expired_hold_payment(db: Session, engine: Engine, smtp:
     deliver(payment_event(order_id))
     assert smtp.messages == []
     assert all(row["channel"] != "email" for row in _rows(engine))
+
+
+def test_reminder_and_review_templates_exist_for_the_scheduler(db: Session) -> None:
+    """Stubs per SPEC: written and tested now, sent by a scheduled job after go-live."""
+    from sqlalchemy import select
+
+    from app.models import Booking
+    from app.notifications import parent_reminder_sms, parent_review_sms
+
+    _, order_id = create_hold_via_api(db)
+    deliver(payment_event(order_id))
+    booking = db.scalars(select(Booking)).one()
+    day = next_saturday(7)
+    reminder = parent_reminder_sms(booking)
+    assert reminder.startswith(f"See you {day:%a}, {day:%b} {day.day} 10:00 AM!")
+    assert "Balance $444 due that day" in reminder
+    assert "538 Main St" in reminder
+    review = parent_review_sms(booking, "https://g.page/r/test/review")
+    assert "Thanks for celebrating Sam" in review
+    assert review.endswith("https://g.page/r/test/review")

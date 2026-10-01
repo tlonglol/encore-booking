@@ -1,7 +1,7 @@
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from tests.helpers import client, client_from, deliver, hold_body, make_slot, next_saturday, payment_event
+from tests.helpers import checkout, client, client_from, deliver, make_slot, next_saturday, payment_event, start_hold
 
 
 def _expire(engine: Engine, hold_id: str) -> None:
@@ -11,7 +11,9 @@ def _expire(engine: Engine, hold_id: str) -> None:
 
 def test_expired_hold_payment(db: Session, engine: Engine) -> None:
     slot = make_slot(db, next_saturday(7))
-    hold_id = client_from("203.0.113.50").post("/api/holds", json=hold_body(slot.id, 1)).json()["hold_id"]
+    funnel = client_from("203.0.113.50")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    assert checkout(funnel, hold_id, 1).status_code == 200
     _expire(engine, hold_id)
 
     response = deliver(payment_event(f"order-{hold_id}", payment_id="pay-late"))
@@ -27,10 +29,14 @@ def test_expired_hold_payment(db: Session, engine: Engine) -> None:
 
 def test_late_payment_after_someone_else_took_the_slot(db: Session, engine: Engine) -> None:
     slot = make_slot(db, next_saturday(7))
-    first = client_from("203.0.113.51").post("/api/holds", json=hold_body(slot.id, 1)).json()["hold_id"]
+    loser = client_from("203.0.113.51")
+    first = start_hold(loser, slot.id).json()["hold_id"]
+    assert checkout(loser, first, 1).status_code == 200
     _expire(engine, first)
-    second = client_from("203.0.113.52").post("/api/holds", json=hold_body(slot.id, 2))
+    winner = client_from("203.0.113.52")
+    second = start_hold(winner, slot.id)
     assert second.status_code == 201
+    assert checkout(winner, second.json()["hold_id"], 2).status_code == 200
 
     assert deliver(payment_event(f"order-{first}", payment_id="pay-late")).json() == {"outcome": "expired_hold"}
     assert client().get(f"/api/holds/{first}").json()["status"] == "paid_after_expiry"

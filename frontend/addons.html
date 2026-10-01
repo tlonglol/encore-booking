@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>Add-ons · Encore Esports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/encore.css">
+</head>
+<body class="has-quote-bar">
+  <nav class="nav">
+    <a class="nav-logo" href="https://encoregaming.us">ENCORE <span>ESPORTS</span></a>
+    <a class="nav-cta" href="tel:+16462038087">(646) 203-8087</a>
+  </nav>
+
+  <main class="wrap">
+    <ol class="steps" id="steps" aria-label="Booking steps"></ol>
+    <div class="hold-line" id="hold-line"></div>
+
+    <section aria-labelledby="addons-label">
+      <div class="section-label" id="addons-label">Add-ons</div>
+      <p class="muted small" style="margin-bottom:1rem">All optional. Your total updates below as you pick.</p>
+      <div class="addon-grid" id="addons"><p class="muted">Loading add-ons…</p></div>
+    </section>
+  </main>
+
+  <div class="quote-bar">
+    <div class="quote-inner">
+      <div class="quote-main">
+        <div class="quote-total" id="quote-total">—</div>
+        <div class="quote-split" id="quote-split"></div>
+        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines" hidden>Details</button>
+      </div>
+      <ul class="quote-lines" id="quote-lines" hidden></ul>
+      <div class="quote-cta" id="quote-cta" hidden></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/funnel.js"></script>
+  <script src="js/addons.js"></script>
+</body>
+</html>

@@ -59,7 +59,11 @@
             el("div", { class: "card-title", text: `${b.day_label} · ${b.time_label}` }),
             b.cancelled_at ? el("span", { class: "pill bad", text: "Cancelled" }) : el("span", { class: "pill ok", text: `Deposit ${b.deposit_status}` }),
           ]),
-          el("div", { class: "card-meta" }, [el("b", { text: `${b.package} · ${b.kids} kids` }), ` · ${b.addons}`]),
+          el("div", { class: "card-meta" }, [
+            el("b", { text: `${b.package} · ${b.kids} kids` }),
+            b.kid_name ? ` · for ${b.kid_name}${b.kid_age ? ` (${b.kid_age})` : ""}` : "",
+            ` · ${b.addons}`,
+          ]),
           el("div", { class: "card-meta" }, [
             "Total ", el("b", { text: money(b.total_cents) }), " · deposit ", el("b", { text: money(b.paid_amount_cents) }),
             " · balance due ", el("b", { text: money(b.balance_cents) }),
@@ -196,7 +200,41 @@
     );
   }
 
-  const TABS = { bookings, requests, flags, dates, notifications };
+  async function leads() {
+    const { status, data } = await guarded("/api/admin/leads");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.waitlist.length && !data.abandoned.length) return panel.replaceChildren(empty("No waitlist signups or abandoned checkouts yet."));
+    panel.replaceChildren(
+      el("div", { class: "section-label", text: "Abandoned checkouts, last 14 days" }),
+      ...(data.abandoned.length
+        ? data.abandoned.map((a) =>
+            el("article", { class: "card" }, [
+              el("div", { class: "card-head" }, [
+                el("div", { class: "card-title", text: a.day_label ? `${a.day_label} · ${a.time_label}` : "No date" }),
+                el("span", { class: "pill warn", text: "Did not pay" }),
+              ]),
+              el("div", { class: "card-meta" }, [
+                a.name ? el("b", { text: a.name }) : el("span", { class: "muted", text: "No name yet" }),
+                " · ",
+                el("a", { href: `mailto:${a.email}`, text: a.email }),
+                a.phone ? [" · ", el("a", { href: `tel:${a.phone}`, text: a.phone })] : null,
+              ].flat()),
+              el("div", { class: "card-meta small muted", text: `${a.package ? `${a.package}, ${a.kids} kids · ` : "Left before choosing a package · "}started ${when(a.created_at)}` }),
+            ])
+          )
+        : [empty("None.")]),
+      el("div", { class: "section-label", text: "Waitlist" }),
+      ...(data.waitlist.length
+        ? data.waitlist.map((w) =>
+            el("article", { class: "card" }, [
+              el("div", { class: "card-meta" }, [el("a", { href: `mailto:${w.email}`, text: w.email }), ` · signed up ${when(w.created_at)}`]),
+            ])
+          )
+        : [empty("None.")])
+    );
+  }
+
+  const TABS = { bookings, requests, flags, dates, notifications, leads };
 
   async function counts() {
     const [flagRes, noteRes, reqRes] = await Promise.all([

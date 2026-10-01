@@ -28,6 +28,8 @@ def post_request(body: RequestCreate, request: Request, db: Session = Depends(ge
         last_name=body.last_name,
         phone=body.phone,
         email=str(body.email),
+        kid_name=body.kid_name,
+        kid_age=body.kid_age,
         notes=body.notes,
         client_ip=client_ip(request),
     )

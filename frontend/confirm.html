@@ -21,6 +21,17 @@
       <div class="spinner" role="status" aria-label="Loading"></div>
     </div>
   </main>
+  <div class="quote-bar" id="confirm-bar" hidden>
+    <div class="quote-inner">
+      <div class="quote-main">
+        <div class="quote-total" id="quote-total">—</div>
+        <div class="quote-split" id="quote-split"></div>
+        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines">Details</button>
+      </div>
+      <ul class="quote-lines" id="quote-lines" hidden></ul>
+    </div>
+  </div>
+
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/confirm.js"></script>

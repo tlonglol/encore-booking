@@ -21,7 +21,8 @@
     <header class="hero">
       <p class="hero-eyebrow">538 Main St · New Rochelle, NY</p>
       <h1 class="hero-title"><span class="line1">Book their</span><span class="line2">birthday</span></h1>
-      <p class="hero-sub">Pick a package, see your price, and lock your date with a $100 deposit. The rest is due the day of the party.</p>
+      <p class="hero-price">Private venue parties from $399</p>
+      <p class="hero-sub">Pick your date, build your party, and lock it in with a $100 deposit. The rest is due the day of the party.</p>
       <div class="badges">
         <span class="badge badge-blue">Sat &amp; Sun mornings</span>
         <span class="badge badge-white">Private venue buyout</span>
@@ -30,44 +31,12 @@
       </div>
     </header>
 
-    <div id="builder">
-    <section aria-labelledby="pkg-label">
-      <div class="section-label" id="pkg-label">Choose your package</div>
-      <div class="pkg-grid" id="packages" role="radiogroup" aria-labelledby="pkg-label"></div>
-    </section>
-
-    <section aria-labelledby="kids-label">
-      <div class="section-label" id="kids-label">How many kids</div>
-      <div class="kids-row">
-        <div class="stepper" role="group" aria-label="Number of kids">
-          <button type="button" id="kids-minus" aria-label="One fewer kid">−</button>
-          <input id="kids-count" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" maxlength="2" aria-label="Number of kids" value="15">
-          <button type="button" id="kids-plus" aria-label="One more kid">+</button>
-        </div>
-        <p class="kids-note" id="kids-note"></p>
-      </div>
-    </section>
-
-    <section aria-labelledby="addons-label">
-      <div class="section-label" id="addons-label">Add-ons</div>
-      <div class="addon-grid" id="addons"></div>
-    </section>
-
-    <section class="book-panel" id="details-panel" aria-labelledby="book-title">
-      <h2 class="book-title" id="book-title">Your details</h2>
-      <p class="book-sub">We'll text and email your confirmation here. Fill this in, then pick a date below.</p>
-      <form id="details-form" class="form-grid" novalidate>
-        <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" autocomplete="given-name" placeholder="First name" required maxlength="60"></div>
-        <div class="field"><label for="last_name">Last name</label><input id="last_name" name="last_name" autocomplete="family-name" placeholder="Last name" required maxlength="60"></div>
-        <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
-        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
-        <div class="field full"><label for="notes">Notes (optional)</label><textarea id="notes" name="notes" maxlength="1000" placeholder="Allergies, the birthday kid's name, questions…"></textarea></div>
-        <div class="field full" id="form-error" role="alert"></div>
-      </form>
-    </section>
+    <ol class="steps" id="steps" aria-label="Booking steps"></ol>
 
     <section aria-labelledby="date-label">
       <div class="section-label" id="date-label">Pick a date</div>
+      <div class="tier-strip" id="tier-strip" aria-label="Package prices"></div>
+      <div id="resume-notice"></div>
       <div id="slot-notice" class="slot-notice" aria-live="polite"></div>
       <div id="slots"><p class="muted">Loading dates…</p></div>
       <div class="weekday-ask">
@@ -77,67 +46,37 @@
             <label for="weekday-date">Your date</label>
             <input id="weekday-date" type="date" required>
           </div>
-          <button type="submit" class="btn btn-primary">Review request</button>
+          <button type="submit" class="btn btn-primary">Continue</button>
           <p class="weekday-error" id="weekday-error" role="alert"></p>
+        </form>
+        <button type="button" class="btn btn-ghost btn-block" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-form">Don't see your date? Get notified</button>
+        <form id="waitlist-form" class="waitlist-form" hidden novalidate>
+          <div class="field">
+            <label for="waitlist-email">Your email</label>
+            <input id="waitlist-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Notify me</button>
+          <p class="waitlist-note" id="waitlist-note" role="status"></p>
         </form>
       </div>
     </section>
-    </div>
-
-    <section class="book-panel hold-panel" id="request-done" hidden aria-live="polite">
-      <p class="hold-caption">Request sent</p>
-      <h2 class="book-title">We'll text you</h2>
-      <p class="summary-line" id="request-summary"></p>
-      <p class="book-sub">No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087.</p>
-      <a class="btn btn-ghost" href="index.html">Back to the calendar</a>
-    </section>
-
-    <section class="book-panel hold-panel" id="hold-panel" hidden aria-live="polite">
-      <p class="hold-caption">Your date is held for</p>
-      <p class="countdown" id="countdown">15:00</p>
-      <p class="summary-line" id="hold-summary"></p>
-      <a class="btn btn-primary btn-block" id="pay-button" href="#">Pay $100 deposit</a>
-      <p class="fine">Secure checkout by Square. You'll come right back here for your confirmation.</p>
-      <p class="fine">Changed your mind? Do nothing: the hold releases itself when the timer runs out.</p>
-    </section>
   </main>
 
-  <div class="quote-bar" id="quote-bar">
+  <div class="quote-bar">
     <div class="quote-inner">
       <div class="quote-main">
         <div class="quote-total" id="quote-total">—</div>
-        <div class="quote-split" id="quote-split">Total</div>
-        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines">Details</button>
+        <div class="quote-split" id="quote-split"></div>
+        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines" hidden>Details</button>
       </div>
       <ul class="quote-lines" id="quote-lines" hidden></ul>
+      <div class="quote-cta" id="quote-cta" hidden></div>
     </div>
   </div>
 
-  <dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
-    <div class="sheet-body">
-      <p class="hold-caption" id="sheet-eyebrow"></p>
-      <h2 class="sheet-title" id="sheet-title"></h2>
-      <dl class="sheet-rows" id="sheet-rows"></dl>
-      <div class="field" id="sheet-time-field" hidden>
-        <label for="preferred_time">Preferred start time</label>
-        <select id="preferred_time" name="preferred_time">
-          <option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option>
-          <option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option>
-          <option value="13:00">1:00 PM</option><option value="14:00">2:00 PM</option>
-          <option value="15:00">3:00 PM</option><option value="16:00" selected>4:00 PM</option>
-          <option value="17:00">5:00 PM</option><option value="18:00">6:00 PM</option>
-          <option value="19:00">7:00 PM</option><option value="20:00">8:00 PM</option>
-        </select>
-      </div>
-      <p class="sheet-note" id="sheet-note"></p>
-      <div id="sheet-error" role="alert"></div>
-      <button type="button" class="btn btn-primary btn-block" id="sheet-confirm">Hold my date</button>
-      <button type="button" class="btn btn-ghost btn-block" id="sheet-dismiss">Not now</button>
-    </div>
-  </dialog>
-
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
-  <script src="js/book.js"></script>
+  <script src="js/funnel.js"></script>
+  <script src="js/grid.js"></script>
 </body>
 </html>

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
     owner_phone: str = ""
+    google_review_url: str = ""
     discord_webhook_url: str = ""
     # Parent confirmation email over SMTP. With any of these empty, the email is logged to the console instead.
     smtp_host: str = ""

@@ -29,9 +29,12 @@ def list_bookings(db: Session) -> list[Row]:
             text(
                 """
                 SELECT b.id, b.confirmation_code, b.event_starts_at, b.package, b.kids, b.addons, b.total_cents,
-                       b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email, b.notes,
+                       b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email,
+                       b.kid_name, b.kid_age, b.notes,
                        b.square_payment_id, b.created_at, b.cancelled_at, b.cancel_reason,
-                       b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund
+                       (b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days'
+                        OR (coalesce(b.cancelled_at, now()) - b.created_at <= interval '14 days'
+                            AND coalesce(b.cancelled_at, now()) <= b.event_starts_at)) AS full_refund
                 FROM bookings b
                 ORDER BY b.cancelled_at IS NOT NULL, b.event_starts_at
                 """
@@ -54,7 +57,8 @@ def cancel_booking(db: Session, booking_id: int, reason: str | None) -> Cancelle
     cancelled = db.execute(
         text(
             "UPDATE bookings SET cancelled_at = now(), cancel_reason = :reason WHERE id = :id"
-            " RETURNING cancelled_at, event_starts_at - now() >= interval '7 days' AS full_refund"
+            " RETURNING cancelled_at, (event_starts_at - now() >= interval '7 days'"
+            " OR (now() - created_at <= interval '14 days' AND now() <= event_starts_at)) AS full_refund"
         ),
         {"id": booking_id, "reason": reason},
     ).one()
@@ -102,6 +106,26 @@ def list_notifications(db: Session, limit: int = 100) -> list[Row]:
             {"limit": limit},
         )
     )
+
+
+def list_leads(db: Session) -> dict[str, list[Row]]:
+    """Follow-up material for the owner: waitlist signups, and holds that captured an email but never paid."""
+    waitlist = db.execute(text("SELECT id, email, created_at FROM waitlist ORDER BY created_at DESC"))
+    abandoned = db.execute(
+        text(
+            """
+            SELECT h.id, h.email, h.first_name, h.last_name, h.phone, h.package, h.kids, h.created_at,
+                   s.starts_at AS slot_starts_at
+            FROM holds h JOIN slots s ON s.id = h.slot_id
+            WHERE h.email IS NOT NULL
+              AND h.created_at > now() - interval '14 days'
+              AND (h.status = 'cancelled' OR (h.status = 'pending_payment' AND h.expires_at <= now()))
+              AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = h.id)
+            ORDER BY h.created_at DESC
+            """
+        )
+    )
+    return {"waitlist": list(waitlist), "abandoned": list(abandoned)}
 
 
 def list_requests(db: Session) -> list[Row]:

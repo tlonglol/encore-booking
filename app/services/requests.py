@@ -36,6 +36,8 @@ class RequestInput:
     last_name: str
     phone: str
     email: str
+    kid_name: str | None
+    kid_age: int | None
     notes: str | None
     client_ip: str | None
 
@@ -89,6 +91,8 @@ def create_request(
         last_name=data.last_name.strip(),
         phone=phone,
         email=email,
+        kid_name=(data.kid_name or "").strip() or None,
+        kid_age=data.kid_age,
         notes=(data.notes or "").strip() or None,
         client_ip=data.client_ip,
     )

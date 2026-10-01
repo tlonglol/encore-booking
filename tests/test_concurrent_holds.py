@@ -9,21 +9,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Hold
-from tests.helpers import client_from, hold_body, make_slot, next_saturday
+from tests.helpers import client_from, make_slot, next_saturday
 
 PARALLEL_REQUESTS = 10
 
 
 def test_concurrent_holds(db: Session) -> None:
-    """N simultaneous requests, each on its own connection and with its own phone, email, and IP: one 201, N-1 409s."""
+    """N simultaneous requests, each on its own connection and from its own IP: one 201, N-1 409s."""
     slot = make_slot(db, next_saturday(7))
     barrier = threading.Barrier(PARALLEL_REQUESTS)
 
     def attempt(n: int) -> httpx.Response:
         client = client_from(f"203.0.113.{n + 1}")
-        body = hold_body(slot.id, n)
         barrier.wait()
-        return client.post("/api/holds", json=body)
+        return client.post("/api/holds", json={"slot_id": slot.id})
 
     with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
         responses = list(pool.map(attempt, range(PARALLEL_REQUESTS)))

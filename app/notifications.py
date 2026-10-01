@@ -51,6 +51,10 @@ def when(starts_at: datetime) -> str:
     return f"{format_day(starts_at)} {format_time(starts_at)}"
 
 
+def full_name(first: str | None, last: str | None) -> str:
+    return " ".join(part for part in (first, last) if part)
+
+
 def parent_booked_sms(booking: Booking, confirmation_url: str) -> str:
     return (
         f"You're booked! {PACKAGES[booking.package].label} party {when(booking.event_starts_at)} at Encore Esports, "
@@ -106,7 +110,7 @@ def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
 def owner_booked_text(booking: Booking) -> str:
     return (
         f"NEW PARTY: {PACKAGES[booking.package].label} {when(booking.event_starts_at)}, {booking.kids} kids, "
-        f"{addons_summary(booking.addons)}. Deposit paid. {booking.first_name} {booking.last_name} {booking.phone}."
+        f"{addons_summary(booking.addons)}. Deposit paid. {full_name(booking.first_name, booking.last_name)} {booking.phone}."
     )
 
 
@@ -115,7 +119,24 @@ def owner_request_text(request: PartyRequest) -> str:
         f"PARTY REQUEST: {PACKAGES[request.package].label} {format_date(request.local_date)} at "
         f"{format_clock(request.preferred_time)}, {request.kids} kids, {addons_summary(request.addons)}. "
         f"Total {dollars(request.total_cents)}. "
-        f"{request.first_name} {request.last_name} {request.phone} {request.email}."
+        f"{full_name(request.first_name, request.last_name)} {request.phone} {request.email}."
+    )
+
+
+def parent_reminder_sms(booking: Booking) -> str:
+    """Week-of reminder. Written and tested; nothing sends it yet (needs a scheduler, see SPEC Before going live)."""
+    return (
+        f"See you {when(booking.event_starts_at)}! {PACKAGES[booking.package].label} party at Encore Esports, "
+        f"{booking.kids} kids. Balance {dollars(booking.total_cents - booking.deposit_cents)} due that day. "
+        f"{VENUE_DETAILS}"
+    )
+
+
+def parent_review_sms(booking: Booking, review_url: str) -> str:
+    """Review request for 1-2 days after the party. Written and tested; nothing sends it yet."""
+    return (
+        f"Thanks for celebrating {booking.kid_name or 'the birthday'} with us at Encore Esports! "
+        f"If you had a great time, a quick review helps us a lot: {review_url}"
     )
 
 
@@ -123,7 +144,7 @@ def owner_late_payment_text(hold: Hold, starts_at: datetime) -> str:
     return (
         f"PAYMENT ON EXPIRED HOLD, call parent: {PACKAGES[hold.package].label} {when(starts_at)}, {hold.kids} kids. "
         f"{dollars(hold.deposit_cents)} received after the hold expired; date NOT confirmed. "
-        f"{hold.first_name} {hold.last_name} {hold.phone}."
+        f"{full_name(hold.first_name, hold.last_name)} {hold.phone}."
     )
 
 

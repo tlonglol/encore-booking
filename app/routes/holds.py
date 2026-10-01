@@ -10,23 +10,35 @@ from app.config import get_settings
 from app.db import get_db
 from app.pricing import PACKAGES, PricingError
 from app.routes.availability import day_out
-from app.schemas import HoldCreatedOut, HoldRequest, HoldStatusOut, LineItemOut, PartyDetails
+from app.schemas import (
+    CheckoutIn,
+    CheckoutOut,
+    HoldCreatedOut,
+    HoldEmailIn,
+    HoldRequest,
+    HoldStatusOut,
+    LineItemOut,
+    PartyDetails,
+    SlotInfo,
+)
 from app.models import Slot
 from app.services.holds import (
-    HoldInput,
+    CheckoutInput,
     HoldLimitReached,
+    HoldNotPending,
     SlotNotFound,
     SlotTooSoon,
     SlotUnavailable,
     attach_payment_link,
-    cancel_pending_hold,
+    checkout_hold,
     create_hold,
     hold_state,
     normalize_ip,
+    save_email,
 )
 from app.services.slots import open_alternatives
 from app.services.square import SquareError, create_deposit_link
-from app.timeutil import format_day, format_time, venue_today
+from app.timeutil import format_date, format_day, format_time, venue_today
 
 router = APIRouter()
 
@@ -47,6 +59,13 @@ def _alternatives(db: Session) -> list[dict[str, Any]]:
     return [day_out(view).model_dump(mode="json") for view in views]
 
 
+def _parse_hold_id(hold_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(hold_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Hold not found") from error
+
+
 @router.post("/api/holds", status_code=201, response_model=HoldCreatedOut)
 def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)) -> Any:
     settings = get_settings()
@@ -55,22 +74,10 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
             status_code=422,
             detail="Dates are request-only right now. Send a request and we'll text you back.",
         )
-    data = HoldInput(
-        slot_id=body.slot_id,
-        package=body.package,
-        kids=body.kids,
-        addons=body.addons,
-        first_name=body.first_name,
-        last_name=body.last_name,
-        phone=body.phone,
-        email=str(body.email),
-        notes=body.notes,
-        client_ip=client_ip(request),
-    )
     try:
-        hold = create_hold(db, data, venue_today(datetime.now(UTC)), settings.min_lead_days)
-    except (PricingError, ValueError) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        hold = create_hold(
+            db, body.slot_id, client_ip(request), body.replace_hold_id, venue_today(datetime.now(UTC)), settings.min_lead_days
+        )
     except SlotNotFound as error:
         raise HTTPException(status_code=404, detail="That date is not available") from error
     except SlotTooSoon as error:
@@ -89,19 +96,70 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
         )
     slot = db.get(Slot, hold.slot_id)
     assert slot is not None
-    try:
-        link = create_deposit_link(settings, hold, f"{format_day(slot.starts_at)} {format_time(slot.starts_at)}")
-    except SquareError as error:
-        cancel_pending_hold(db, hold.id)
-        raise HTTPException(
-            status_code=502, detail="We couldn't start checkout, and your date was released. Please try again."
-        ) from error
-    attach_payment_link(db, hold, link.id, link.url, link.order_id)
     return HoldCreatedOut(
         hold_id=str(hold.id),
-        checkout_url=hold.checkout_url,
         expires_at=hold.expires_at,
         seconds_remaining=max(0, int((hold.expires_at - datetime.now(UTC)).total_seconds())),
+        date=slot.local_date.isoformat(),
+        day_label=format_day(slot.starts_at),
+        time_label=format_time(slot.starts_at),
+    )
+
+
+@router.patch("/api/holds/{hold_id}/email")
+def patch_hold_email(hold_id: str, body: HoldEmailIn, db: Session = Depends(get_db)) -> dict[str, bool]:
+    """Abandoner recovery: saved on blur, long before the pay button. A dead hold is left alone."""
+    saved = save_email(db, _parse_hold_id(hold_id), str(body.email))
+    return {"saved": saved}
+
+
+@router.post("/api/holds/{hold_id}/checkout", response_model=CheckoutOut)
+def post_checkout(hold_id: str, body: CheckoutIn, db: Session = Depends(get_db)) -> Any:
+    settings = get_settings()
+    parsed = _parse_hold_id(hold_id)
+    data = CheckoutInput(
+        package=body.package,
+        kids=body.kids,
+        addons=body.addons,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        phone=body.phone,
+        email=str(body.email),
+        kid_name=body.kid_name,
+        kid_age=body.kid_age,
+    )
+    try:
+        hold = checkout_hold(db, parsed, data)
+    except (PricingError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except SlotNotFound as error:
+        raise HTTPException(status_code=404, detail="Hold not found") from error
+    except HoldNotPending as error:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "This hold is no longer active, so the date was released.", "status": error.status},
+        )
+    except HoldLimitReached as error:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": str(error), "expires_at": error.expires_at.isoformat()},
+        )
+    slot = db.get(Slot, hold.slot_id)
+    assert slot is not None
+    if not hold.square_order_id:
+        try:
+            link = create_deposit_link(settings, hold, f"{format_day(slot.starts_at)} {format_time(slot.starts_at)}")
+        except SquareError as error:
+            # The hold is kept: the parent's date is not released over a Square blip, and the button retries.
+            raise HTTPException(
+                status_code=502, detail="We couldn't start checkout. Your date is still held; please try again."
+            ) from error
+        attach_payment_link(db, hold, link.id, link.url, link.order_id)
+    assert hold.checkout_url is not None
+    return CheckoutOut(
+        checkout_url=hold.checkout_url,
+        seconds_remaining=max(0, int((hold.expires_at - datetime.now(UTC)).total_seconds())),
+        party=party_details(hold, slot.starts_at, None, None),
     )
 
 
@@ -117,6 +175,7 @@ def party_details(
         package_label=package.label,
         day_label=format_day(starts_at),
         time_label=format_time(starts_at),
+        starts_at=starts_at,
         hours=package.hours + (1 if "extra_hour" in record.addons else 0),
         kids=record.kids,
         line_items=[LineItemOut(**item) for item in record.line_items],
@@ -128,11 +187,7 @@ def party_details(
 
 @router.get("/api/holds/{hold_id}")
 def get_hold(hold_id: str, db: Session = Depends(get_db)) -> HoldStatusOut:
-    try:
-        parsed = uuid.UUID(hold_id)
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail="Hold not found") from error
-    state = hold_state(db, str(parsed))
+    state = hold_state(db, str(_parse_hold_id(hold_id)))
     if state is None:
         raise HTTPException(status_code=404, detail="Hold not found")
     hold = state.hold
@@ -143,7 +198,14 @@ def get_hold(hold_id: str, db: Session = Depends(get_db)) -> HoldStatusOut:
         expires_at=hold.expires_at,
         seconds_remaining=state.seconds_remaining,
         checkout_url=hold.checkout_url if state.status == "pending_payment" else None,
-        party=party_details(
+        slot=SlotInfo(
+            date=state.local_date.isoformat(),
+            day_label=format_date(state.local_date),
+            time_label=format_time(state.starts_at),
+        ),
+        party=None
+        if hold.package is None
+        else party_details(
             hold,
             state.starts_at,
             state.confirmation_code if booked else None,

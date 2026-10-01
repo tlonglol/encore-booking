@@ -102,6 +102,8 @@ def bookings(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "paid_amount_cents": row.paid_amount_cents,
             "balance_cents": row.total_cents - row.deposit_cents,
             "deposit_status": "paid (dev fake)" if row.square_payment_id.startswith("dev-pay-") else "paid",
+            "kid_name": row.kid_name,
+            "kid_age": row.kid_age,
             "name": f"{row.first_name} {row.last_name}",
             "phone": row.phone,
             "email": row.email,
@@ -113,6 +115,30 @@ def bookings(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         }
         for row in admin_service.list_bookings(db)
     ]
+
+
+@router.get("/leads", dependencies=[Depends(require_admin)])
+def leads(db: Session = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
+    rows = admin_service.list_leads(db)
+    return {
+        "waitlist": [
+            {"id": row.id, "email": row.email, "created_at": row.created_at.isoformat()}
+            for row in rows["waitlist"]
+        ],
+        "abandoned": [
+            {
+                "hold_id": str(row.id),
+                "email": row.email,
+                "name": f"{row.first_name} {row.last_name}".strip() if row.first_name else None,
+                "phone": row.phone,
+                "package": PACKAGES[row.package].label if row.package else None,
+                "kids": row.kids,
+                "created_at": row.created_at.isoformat(),
+                **_when(row.slot_starts_at),
+            }
+            for row in rows["abandoned"]
+        ],
+    }
 
 
 @router.post("/bookings/{booking_id}/cancel", dependencies=[Depends(require_admin)])

@@ -109,9 +109,7 @@ def test_request_mode_weekend_flow(db: Session, engine: Engine, monkeypatch: pyt
     make_slot(db, saturday)
     assert client_from("203.0.113.156").post("/api/requests", json=request_body(saturday, 6)).status_code == 201
 
-    from tests.helpers import hold_body
-
-    hold = client_from("203.0.113.157").post("/api/holds", json=hold_body(1, 7))
+    hold = client_from("203.0.113.157").post("/api/holds", json={"slot_id": 1})
     assert hold.status_code == 422
     assert "request-only" in hold.json()["detail"]
     with engine.connect() as conn:

@@ -1,5 +1,7 @@
 from datetime import date, datetime, time
 
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -30,22 +32,35 @@ class QuoteOut(BaseModel):
 
 
 class HoldRequest(BaseModel):
+    """Anonymous: tapping a date card holds the slot; contact details arrive at checkout."""
+
     slot_id: int
-    package: str
-    kids: int
-    addons: dict[str, int] = Field(default_factory=dict)
-    first_name: str = Field(min_length=1, max_length=60)
-    last_name: str = Field(min_length=1, max_length=60)
-    phone: str = Field(min_length=7, max_length=30)
-    email: EmailStr
-    notes: str | None = Field(default=None, max_length=1000)
+    replace_hold_id: UUID | None = None
 
 
 class HoldCreatedOut(BaseModel):
     hold_id: str
-    checkout_url: str | None
     expires_at: datetime
     seconds_remaining: int
+    date: str
+    day_label: str
+    time_label: str
+
+
+class HoldEmailIn(BaseModel):
+    email: EmailStr
+
+
+class CheckoutIn(BaseModel):
+    package: str
+    kids: int
+    addons: dict[str, int] = Field(default_factory=dict)
+    first_name: str = Field(min_length=1, max_length=60)
+    last_name: str = Field(default="", max_length=60)
+    phone: str = Field(min_length=7, max_length=30)
+    email: EmailStr
+    kid_name: str = Field(min_length=1, max_length=60)
+    kid_age: int = Field(ge=1, le=99)
 
 
 class SlotSummary(BaseModel):
@@ -64,6 +79,7 @@ class PartyDetails(BaseModel):
     package_label: str
     day_label: str
     time_label: str
+    starts_at: datetime
     hours: int
     kids: int
     line_items: list[LineItemOut]
@@ -72,12 +88,25 @@ class PartyDetails(BaseModel):
     balance_cents: int
 
 
+class SlotInfo(BaseModel):
+    date: str
+    day_label: str
+    time_label: str
+
+
 class HoldStatusOut(BaseModel):
     hold_id: str
     status: str
     expires_at: datetime
     seconds_remaining: int
     checkout_url: str | None
+    slot: SlotInfo
+    party: PartyDetails | None
+
+
+class CheckoutOut(BaseModel):
+    checkout_url: str
+    seconds_remaining: int
     party: PartyDetails
 
 
@@ -96,7 +125,13 @@ class RequestCreate(BaseModel):
     last_name: str = Field(min_length=1, max_length=60)
     phone: str = Field(min_length=7, max_length=30)
     email: EmailStr
+    kid_name: str | None = Field(default=None, max_length=60)
+    kid_age: int | None = Field(default=None, ge=1, le=99)
     notes: str | None = Field(default=None, max_length=1000)
+
+
+class WaitlistIn(BaseModel):
+    email: EmailStr
 
 
 class RequestOut(BaseModel):
