@@ -72,6 +72,7 @@
           el("div", { class: "card-meta" }, [
             el("b", { text: b.name }), " · ", el("a", { href: `tel:${b.phone}`, text: b.phone }), " · ", el("a", { href: `mailto:${b.email}`, text: b.email }),
           ]),
+          b.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + b.birthday_line })]) : null,
           b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
           el("div", { class: "card-meta small muted", text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}` + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "") }),
           el("div", { class: "card-actions" }, [
@@ -105,6 +106,7 @@
           el("div", { class: "card-meta" }, [
             el("b", { text: r.name }), " · ", el("a", { href: `tel:${r.phone}`, text: r.phone }), " · ", el("a", { href: `mailto:${r.email}`, text: r.email }),
           ]),
+          r.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + r.birthday_line })]) : null,
           r.notes ? el("div", { class: "body-text", text: `Notes: ${r.notes}` }) : null,
           el("div", { class: "card-meta small muted", text: `Requested ${when(r.created_at)} · call or text the parent to confirm` }),
         ])

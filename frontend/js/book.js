@@ -8,7 +8,7 @@
   // Display copy only, mirroring "feeds about 10 kids" on the Pizza Pack card; never used for pricing.
   const KIDS_PER_PIZZA_PACK = 10;
   const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "By request" };
-  const DRAFT_KEYS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "package", "addons", "kids", "contact", "seenAddons", "seenInfo"];
+  const DRAFT_KEYS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "package", "addons", "kids", "contact", "seenAddons", "seenInfo", "birthday"];
   const DAY_MS = 86400000;
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -26,6 +26,7 @@
     contact: {},
     seenAddons: false,
     seenInfo: false,
+    birthday: null,
   };
 
   const ui = {
@@ -44,6 +45,7 @@
     timer: null,
     popover: null,
     picked: null,
+    birthdayNote: "",
     dead: null,
     done: null,
   };
@@ -110,7 +112,7 @@
     const seq = ++draftSeq;
     api(`/api/holds/${draft.holdId}/draft`, {
       method: "PATCH",
-      body: { package: draft.package, kids: kidsValue(), addons: draft.addons },
+      body: { package: draft.package, kids: kidsValue(), addons: draft.addons, birthday: draft.birthday || null },
     }).then((result) => {
       if (seq !== draftSeq || result.status !== 200) return;
       ui.quote = result.data;
@@ -242,6 +244,9 @@
           value ? el("div", { class: "rail-value", text: value }) : null,
         ];
         // The chosen package explains itself: its top unlocks ride along in the rail.
+        if (number === 1 && draft.birthday) {
+          lines.push(el("div", { class: "rail-sub rail-sub-muted", text: `Birthday ${shortDate(draft.birthday)}` }));
+        }
         if (number === 2 && draft.package) {
           const unlocks = C.highlights(draft.package).slice(0, 3).map((feature) => C.shortFor(feature, draft.package));
           lines.push(el("div", { class: "rail-sub", text: unlocks.join(" · ") }));
@@ -408,6 +413,12 @@
       ),
       el("div", { class: "diff-strip", id: "diff-strip" }),
       el("div", { class: "tab-pop", id: "tab-pop", hidden: true }),
+      el("div", { class: "bday" }, [
+        el("label", { for: "bday" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
+        el("input", { id: "bday", type: "date", value: draft.birthday || null, min: ui.today || null, max: ui.today ? shiftDate(ui.today, 366) : null, onchange: onBirthday }),
+        el("button", { type: "button", class: "link-btn", id: "bday-clear", hidden: !draft.birthday, text: "Clear", onclick: clearBirthday }),
+      ]),
+      el("p", { class: "bday-msg", id: "bday-msg", role: "alert" }),
     ]);
 
     stepRoot().replaceChildren(
@@ -476,6 +487,32 @@
     ui.maxWeekends = data.max_weekends;
     ui.today = data.today;
     ui.firstBookable = data.first_bookable_date;
+    if (draft.birthday && draft.birthday < data.today) {
+      draft.birthday = null;
+      save();
+    }
+    const bday = $("bday");
+    if (bday) {
+      bday.min = data.today;
+      bday.max = shiftDate(data.today, 366);
+    }
+    if (draft.birthday) {
+      // Cover the birthday and the weekend after it, on demand: this is what keeps the default list at 8.
+      const needed = Math.min(ui.maxWeekends, Math.ceil(window.EncoreFinder.diffDays(draft.birthday, data.today) / 7) + 2);
+      if (ui.weekends < needed) {
+        ui.weekends = needed;
+        return loadGrid();
+      }
+      // Nothing bookable near it: look further out for the nearest open weekend, up to the cap.
+      if (ui.weekends < ui.maxWeekends && window.EncoreFinder.suggest(weekendGroups(), draft.birthday).exhausted) {
+        ui.weekends = Math.min(ui.maxWeekends, ui.weekends + MORE_STEP);
+        return loadGrid();
+      }
+    }
+    ui.birthdayNote =
+      draft.birthday && draft.birthday > data.days[data.days.length - 1].date
+        ? "Weekends that far out aren't open for online booking yet. Call (646) 203-8087, or get notified below."
+        : "";
     // A date held further out than the list reaches must stay visible: widen the list to cover it.
     const last = data.days[data.days.length - 1].date;
     if (draft.date && draft.date > last && ui.weekends < ui.maxWeekends) {
@@ -520,57 +557,92 @@
     return Math.min(...ui.catalog.packages.map((p) => p.price_cents));
   }
 
+  // One date card, with its live state in words. Used by every layout of the grid.
+  function dayCard(day, price, prefix) {
+    const mine = holding() && day.slot_id === draft.slotId;
+    const picked = Boolean(ui.picked) && ui.picked.date === day.date;
+    const tappable = mine || day.status === "open" || day.status === "request";
+    const label = picked ? "Selected" : mine ? "Your date" : STATUS_TEXT[day.status];
+    const live = day.status === "open" || day.status === "request" || mine;
+    return el(
+      "button",
+      {
+        type: "button",
+        class: `wk-card ${picked || mine ? "open yours" : day.status}`,
+        disabled: !tappable,
+        "aria-pressed": String(picked),
+        "aria-label": `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
+        onclick: !tappable ? null : () => selectDate(day),
+      },
+      [
+        el("span", { class: "wk-date", text: day.day_label }),
+        el("span", { class: "wk-time", text: day.time_label || "10:00 AM" }),
+        live
+          ? el("span", { class: "wk-price", "data-cents": String(price) }, [prefix, el("span", { class: "wk-price-num", text: dollars(price) })])
+          : null,
+        el("span", { class: "wk-state" }, [el("span", { text: label })]),
+        !mine && day.status === "held" ? el("span", { class: "wk-hint", text: "May free up in a few minutes" }) : null,
+      ]
+    );
+  }
+
+  function weekendBlock(group, price, prefix, note) {
+    return el("div", { class: "wk-group" }, [
+      el("div", { class: "wk-label" }, [weekendLabel(group), note ? el("span", { class: "wk-note", text: ` · ${note}` }) : null]),
+      el("div", { class: "wk-cards" }, group.map((day) => dayCard(day, price, prefix))),
+    ]);
+  }
+
   function renderGrid() {
     const slots = $("slots");
     if (!slots) return;
     const price = tierPriceCents();
     const prefix = draft.package ? "" : "from ";
-    slots.replaceChildren(
-      el(
-        "div",
-        { class: "wk-grid" },
-        weekendGroups().map((group) =>
-          el("div", { class: "wk-group" }, [
-            el("div", { class: "wk-label", text: weekendLabel(group) }),
-            el(
-              "div",
-              { class: "wk-cards" },
-              group.map((day) => {
-                const mine = holding() && day.slot_id === draft.slotId;
-                const picked = Boolean(ui.picked) && ui.picked.date === day.date;
-                const tappable = mine || day.status === "open" || day.status === "request";
-                const label = picked ? "Selected" : mine ? "Your date" : STATUS_TEXT[day.status];
-                const live = day.status === "open" || day.status === "request" || mine;
-                return el(
-                  "button",
-                  {
-                    type: "button",
-                    class: `wk-card ${picked || mine ? "open yours" : day.status}`,
-                    disabled: !tappable,
-                    "aria-pressed": String(picked),
-                    "aria-label": `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
-                    onclick: !tappable ? null : () => selectDate(day),
-                  },
-                  [
-                    el("span", { class: "wk-date", text: day.day_label }),
-                    el("span", { class: "wk-time", text: day.time_label || "10:00 AM" }),
-                    live
-                      ? el("span", { class: "wk-price", "data-cents": String(price) }, [
-                          prefix,
-                          el("span", { class: "wk-price-num", text: dollars(price) }),
-                        ])
-                      : null,
-                    el("span", { class: "wk-state" }, [el("span", { text: label })]),
-                    !mine && day.status === "held" ? el("span", { class: "wk-hint", text: "May free up in a few minutes" }) : null,
-                  ]
-                );
-              })
-            ),
-          ])
-        )
-      ),
-      moreWeekends()
-    );
+    const groups = weekendGroups();
+
+    if (!draft.birthday) {
+      slots.replaceChildren(
+        el("div", { class: "wk-grid" }, groups.map((group) => weekendBlock(group, price, prefix))),
+        moreWeekends()
+      );
+      return;
+    }
+
+    // Birthday set: the closest weekends are pinned on top; every other weekend is still here, under a fold.
+    const found = window.EncoreFinder.suggest(groups, draft.birthday);
+    const children = [
+      el("div", { class: "closest" }, [
+        el("div", { class: "closest-title" }, [
+          "Closest to the birthday",
+          el("span", { text: ` · ${dayLabelFor(draft.birthday)}` }),
+        ]),
+        el("div", { class: "wk-grid" }, found.pinned.map((entry) => weekendBlock(entry.group, price, prefix, entry.note))),
+        found.noneNearby
+          ? el("p", { class: "closest-none" }, [
+              found.exhausted ? "No open weekends near that date. " : "The weekends right around that date are taken. ",
+              el("button", { type: "button", class: "link-btn", text: "Get notified", onclick: openWaitlist }),
+              " if one opens up.",
+            ])
+          : null,
+        ui.birthdayNote ? el("p", { class: "closest-none", text: ui.birthdayNote }) : null,
+      ]),
+    ];
+    if (found.rest.length) {
+      children.push(
+        el("details", { class: "all-wk" }, [
+          el("summary", { text: `All weekends (${found.rest.length} more)` }),
+          el("div", { class: "wk-grid" }, found.rest.map((group) => weekendBlock(group, price, prefix))),
+        ])
+      );
+    }
+    children.push(moreWeekends());
+    slots.replaceChildren(...children);
+  }
+
+  function openWaitlist() {
+    const form = $("waitlist-form");
+    if (form && form.hidden) toggleAsk("waitlist");
+    if (form) form.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
   }
 
   // Loads further weekends on demand, MORE_STEP at a time, up to the server's cap.
@@ -687,6 +759,54 @@
       ),
       el("button", { type: "button", class: "link-btn", text: "Compare all plans", onclick: () => openCompare() })
     );
+  }
+
+  // ---------- birthday finder ----------
+  function birthdayMsg(message) {
+    const node = $("bday-msg");
+    if (node) node.textContent = message || "";
+  }
+
+  function onBirthday(event) {
+    const input = event.target;
+    const value = input.value;
+    if (!value) {
+      clearBirthday();
+      return;
+    }
+    if (ui.today && value < ui.today) {
+      birthdayMsg("That date has already passed. Pick the upcoming birthday.");
+      input.value = draft.birthday || "";
+      return;
+    }
+    if (ui.today && value > shiftDate(ui.today, 366)) {
+      birthdayMsg("That's more than a year away. Check the year, or call (646) 203-8087.");
+      input.value = draft.birthday || "";
+      return;
+    }
+    birthdayMsg("");
+    draft.birthday = value;
+    save();
+    $("bday-clear").hidden = false;
+    renderRail();
+    pushDraft();
+    loadGrid();
+  }
+
+  // Clearing restores the full default grid: back to 8 weekends, nothing pinned.
+  function clearBirthday() {
+    draft.birthday = null;
+    ui.weekends = null;
+    ui.birthdayNote = "";
+    save();
+    const input = $("bday");
+    if (input) input.value = "";
+    const clear = $("bday-clear");
+    if (clear) clear.hidden = true;
+    birthdayMsg("");
+    renderRail();
+    pushDraft();
+    loadGrid();
   }
 
   // Tapping a date only selects it. Nothing is held and the page stays put until Confirm.
@@ -1185,6 +1305,7 @@
       email: form.email,
       kid_name: form.kidName,
       kid_age: Number(form.kidAge),
+      birthday: draft.birthday || null,
     };
     const result = requesting()
       ? await api("/api/requests", { method: "POST", body: { date: draft.date, preferred_time: $("preferred_time").value, ...body } })

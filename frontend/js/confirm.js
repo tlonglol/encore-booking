@@ -13,12 +13,22 @@
     return el("h1", { class: "hero-title" }, [el("span", { class: "line1", text: line1 }), el("span", { class: "line2", text: line2 })]);
   }
 
+  // "Leo turns 8 · Oct 14" when a birthday was given; nothing otherwise.
+  function birthdayRow(party) {
+    if (!party.birthday) return [];
+    const day = new Date(party.birthday + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const who = party.kid_name || "Birthday";
+    const turns = party.kid_age ? `${who} turns ${party.kid_age}` : `${who}'s birthday`;
+    return [["Birthday", `${turns} · ${day}`]];
+  }
+
   function details(party) {
     const rows = [
       ["Package", party.package_label],
       ["Date", party.day_label],
       ["Time", `${party.time_label} · ${party.hours} hours`],
       ["Kids", String(party.kids)],
+      ...birthdayRow(party),
       ...party.line_items
         .filter((item) => item.key !== "package" && item.key !== "additional_kids")
         .map((item) => [item.quantity > 1 ? `${item.label} × ${item.quantity}` : item.label, item.included ? "Included" : money(item.amount_cents)]),
