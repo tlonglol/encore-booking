@@ -1197,3 +1197,23 @@ img { max-width: 100%; }
 }
 #advance:hover:not(:disabled), .pick-card .pick-go:hover { filter: brightness(1.15); }
 #advance:disabled { background: #1c2a3a; border-color: #1c2a3a; color: var(--gray); box-shadow: none; text-shadow: none; }
+
+/* "Compare all plans": a visible button above the plans, not a small link below them. */
+.tabs-head { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.compare-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(26, 116, 204, 0.12);
+  border: 1px solid var(--blue-light);
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-family: var(--condensed);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #cfe4ff;
+}
+.compare-btn::after { content: '⇄'; font-size: 14px; color: var(--blue-light); }
+.compare-btn:hover { background: rgba(26, 116, 204, 0.28); }

@@ -373,6 +373,9 @@
   function renderDate() {
     restorePicked();
     const strip = el("div", { class: "tabs-wrap" }, [
+      el("div", { class: "tabs-head" }, [
+        el("button", { type: "button", class: "compare-btn", text: "Compare all plans", onclick: () => openCompare() }),
+      ]),
       el(
         "div",
         { class: "tab-strip", role: "tablist", "aria-label": "Package" },
@@ -400,9 +403,6 @@
       ),
       el("div", { class: "diff-strip", id: "diff-strip" }),
       el("div", { class: "tab-pop", id: "tab-pop", hidden: true }),
-      el("div", { class: "tabs-foot" }, [
-        el("button", { type: "button", class: "link-btn", text: "Compare all plans", onclick: () => openCompare() }),
-      ]),
     ]);
 
     stepRoot().replaceChildren(
@@ -719,6 +719,9 @@
         el("h1", { class: "step-title", text: "Choose your package" }),
       ]),
       el("div", { id: "step-notice" }),
+      el("div", { class: "tabs-head" }, [
+        el("button", { type: "button", class: "compare-btn", text: "Compare all plans", onclick: () => openCompare() }),
+      ]),
       el(
         "div",
         { class: "pick-grid" },
@@ -737,10 +740,7 @@
             el("button", { type: "button", class: "btn btn-primary btn-block pick-go", text: `Select ${p.label}`, onclick: () => selectPackage(p.key) }),
           ])
         )
-      ),
-      el("div", { class: "tabs-foot" }, [
-        el("button", { type: "button", class: "link-btn", text: "Compare all plans", onclick: () => openCompare() }),
-      ])
+      )
     );
   }
 
