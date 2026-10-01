@@ -19,7 +19,14 @@
   </header>
 
   <main class="funnel">
-    <div class="funnel-main" id="step"></div>
+    <div class="funnel-main">
+      <div class="hold-head" id="hold-head" hidden>
+        <span class="hold-what" id="hold-what"></span>
+        <span class="hold-when" id="hold-when"></span>
+        <span class="hold-timer" id="hold-timer"></span>
+      </div>
+      <div id="step"></div>
+    </div>
 
     <aside class="rail" id="rail" aria-label="Party summary">
       <button class="rail-handle" id="rail-handle" type="button" aria-expanded="false" aria-controls="rail-body">
@@ -40,6 +47,16 @@
   </main>
 
   <footer class="page-footer" id="footer"></footer>
+
+  <dialog class="hold-modal" id="hold-modal" aria-labelledby="hold-modal-title">
+    <div class="hold-modal-body">
+      <h2 class="hold-modal-title" id="hold-modal-title"></h2>
+      <p class="hold-modal-text" id="hold-modal-text"></p>
+      <div id="hold-modal-error" role="alert"></div>
+      <button type="button" class="btn btn-primary btn-block" id="hold-modal-primary"></button>
+      <button type="button" class="btn btn-ghost btn-block" id="hold-modal-secondary"></button>
+    </div>
+  </dialog>
 
   <dialog class="drawer" id="compare" aria-labelledby="compare-title">
     <div class="drawer-head">

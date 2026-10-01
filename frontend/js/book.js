@@ -47,6 +47,7 @@
     picked: null,
     birthdayNote: "",
     policyOpen: false,
+    holdModal: null,
     delta: null,
     pendingDelta: null,
     deltaTimer: null,
@@ -194,7 +195,6 @@
     ui.policyOpen = false;
     save();
     if (ui.done) return renderDone();
-    if (ui.dead) return renderDead();
     if (step === "date") renderDate();
     else if (step === "plan") renderPlan();
     else if (step === "addons") renderAddons();
@@ -203,8 +203,7 @@
     renderMoney();
     renderAdvance();
     document.documentElement.setAttribute("data-tier", draft.package || "none");
-    if (step !== "info") stopTimer();
-    ensureTimer();
+    renderHoldHead();
     window.scrollTo({ top: 0, behavior: REDUCED.matches ? "auto" : "smooth" });
   }
 
@@ -419,7 +418,7 @@
     const button = $("advance");
     const note = $("rail-note");
     note.textContent = "";
-    if (ui.done || ui.dead) {
+    if (ui.done) {
       button.hidden = true;
       return;
     }
@@ -1137,9 +1136,9 @@
       draft.dayLabel = data.day_label;
       draft.timeLabel = data.time_label;
       draft.expiresAt = data.expires_at;
-      ui.deadline = performance.now() + data.seconds_remaining * 1000;
       ui.picked = null;
       save();
+      setDeadline(data.seconds_remaining);
       pushDraft();
       go(afterDate());
       return;
@@ -1168,7 +1167,6 @@
   function renderPlan() {
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
-        el("p", { class: "step-eyebrow", text: requesting() ? `Requesting ${draft.dayLabel}` : `Holding ${draft.dayLabel} · ${draft.timeLabel}` }),
         el("h1", { class: "step-title", text: "Choose your package" }),
       ]),
       el("div", { id: "step-notice" }),
@@ -1224,7 +1222,6 @@
     save();
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
-        el("p", { class: "step-eyebrow", text: requesting() ? `Requesting ${draft.dayLabel}` : `Holding ${draft.dayLabel} · ${draft.timeLabel}` }),
         el("h1", { class: "step-title", text: "Add extras" }),
         el("p", { class: "step-sub", text: "All optional. Nothing here moves you forward — the total updates as you pick." }),
       ]),
@@ -1435,10 +1432,6 @@
     save();
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
-        el("p", { class: "step-eyebrow" }, [
-          requesting() ? `Requesting ${draft.dayLabel}` : `You're holding ${draft.dayLabel} · ${draft.timeLabel}`,
-          requesting() ? null : el("span", { class: "timer", id: "hold-timer", text: "--:--" }),
-        ]),
         el("h1", { class: "step-title", text: requesting() ? "Send your request" : "Lock it in" }),
       ]),
       el("form", { class: "form-grid", id: "pay-form", novalidate: true, onsubmit: (e) => e.preventDefault() }, [
@@ -1456,7 +1449,6 @@
       $(id).addEventListener("blur", id === "email" ? saveEmailOnBlur : rememberForm);
     });
     renderSummary();
-    enterInfo();
   }
 
   function field(id, label, options) {
@@ -1594,7 +1586,7 @@
     ui.busy = false;
     renderAdvance();
     if (status === 409 && data && data.status) {
-      showDead(data.status);
+      showHoldModal(data.status);
       return;
     }
     if (status === 429 && data && data.expires_at) {
@@ -1605,72 +1597,163 @@
     payError(detailText(data));
   }
 
-  // ---------- countdown ----------
-  function stopTimer() {
-    clearInterval(ui.timer);
-    ui.timer = null;
+  // ---------- hold header, timer and expiry ----------
+  // The hold row's expiry on the server is the only clock that matters. The client keeps one number, the
+  // moment (on its own monotonic clock) the server said the hold would end, and only ever sets it from a
+  // server response: at hold creation, on boot, on return to the tab, on a Re-hold. It is never restarted locally.
+  const LOW_SECONDS = 180;
+
+  function setDeadline(secondsRemaining) {
+    ui.deadline = performance.now() + secondsRemaining * 1000;
+    startTimer();
+    paintTimer();
   }
 
-  function ensureTimer() {
-    if (!holding() || !ui.deadline) return;
-    tick();
+  function startTimer() {
     if (!ui.timer) ui.timer = setInterval(tick, 250);
   }
 
-  function tick() {
-    const remaining = (ui.deadline - performance.now()) / 1000;
-    const timer = $("hold-timer");
-    if (timer) {
-      timer.textContent = clock(Math.ceil(remaining));
-      timer.classList.toggle("low", remaining < 120);
+  function stopTimer() {
+    clearInterval(ui.timer);
+    ui.timer = null;
+    ui.deadline = null;
+  }
+
+  function remainingSeconds() {
+    return ui.deadline === null ? null : (ui.deadline - performance.now()) / 1000;
+  }
+
+  // "held · 14 min": whole minutes, rounded down so it never overstates, muted. Under three minutes it
+  // becomes mm:ss in the accent colour.
+  function paintTimer() {
+    const node = $("hold-timer");
+    if (!node) return;
+    const left = remainingSeconds();
+    if (!holding() || left === null) {
+      node.textContent = "";
+      node.classList.remove("low");
+      return;
     }
-    if (remaining <= 0 && !ui.busy) showDead("expired");
+    const low = left < LOW_SECONDS;
+    const text = left <= 0 ? "expired" : low ? clock(Math.ceil(left)) : `held · ${Math.floor(left / 60)} min`;
+    if (node.textContent !== text) node.textContent = text;
+    node.classList.toggle("low", low);
   }
 
-  async function enterInfo() {
-    if (requesting()) return;
+  function tick() {
+    paintTimer();
+    const left = remainingSeconds();
+    if (left !== null && left <= 0 && !ui.busy && !ui.holdModal) showHoldModal("expired");
+  }
+
+  // The persistent header line: one element in the shell, so the timer never unmounts on step navigation.
+  function renderHoldHead() {
+    const head = $("hold-head");
+    const visible = Boolean(draft.date) && (holding() || requesting()) && !ui.done;
+    head.hidden = !visible;
+    if (!visible) {
+      paintTimer();
+      return;
+    }
+    $("hold-what").textContent = requesting() ? "Requesting" : "Holding";
+    $("hold-when").textContent = draft.timeLabel ? `${draft.dayLabel} · ${draft.timeLabel}` : draft.dayLabel;
+    paintTimer();
+  }
+
+  // Ask the server how long is left. Used on boot, when the tab comes back and when a cached page is restored.
+  async function syncHold() {
+    if (!holding()) return;
     const { status, data } = await api(`/api/holds/${draft.holdId}`);
-    if (status !== 200) return showDead("expired");
-    if (data.status !== "pending_payment") return showDead(data.status);
-    draft.expiresAt = data.expires_at;
-    ui.deadline = performance.now() + data.seconds_remaining * 1000;
-    save();
-    ensureTimer();
+    if (status === 404) return showHoldModal("gone");
+    if (status !== 200) return;
+    if (data.status === "pending_payment") {
+      draft.expiresAt = data.expires_at;
+      save();
+      setDeadline(data.seconds_remaining);
+      return;
+    }
+    showHoldModal(data.status);
   }
 
-  function showDead(status) {
+  function holdModalClose() {
+    ui.holdModal = null;
+    const dialog = $("hold-modal");
+    if (dialog.open) dialog.close();
+  }
+
+  // "Still there?" when the hold expired; a plain notice when the date is gone for good. The modal has no other
+  // way out: Re-hold (only for an expired hold) or back to the dates.
+  function showHoldModal(status) {
+    if (!holding()) return;
+    const label = draft.dayLabel;
+    const expired = status === "expired";
+    ui.holdModal = status;
     stopTimer();
-    ui.dead = status;
-    clearDraft();
-    renderDead();
+    paintTimer();
+    $("hold-modal-title").textContent = expired ? "Still there?" : "That date is no longer held";
+    $("hold-modal-text").textContent = expired
+      ? `Your hold on ${label} expired. Nothing was charged. Re-hold it to get another 15 minutes; your package and details are saved.`
+      : status === "booked"
+      ? `${label} has been booked. If that was you, check your confirmation text. Otherwise, pick another date; your package and details are saved.`
+      : `${label} is no longer held for you, and nothing was charged. Pick a date to continue; your package and details are saved.`;
+    $("hold-modal-error").replaceChildren();
+    const primary = $("hold-modal-primary");
+    primary.hidden = !expired;
+    primary.disabled = false;
+    primary.textContent = `Re-hold ${shortDate(draft.date)}`;
+    primary.onclick = reHold;
+    const secondary = $("hold-modal-secondary");
+    secondary.textContent = expired ? "Pick another date" : "Back to the dates";
+    secondary.onclick = leaveHold;
+    if (!$("hold-modal").open) $("hold-modal").showModal();
   }
 
-  function renderDead() {
-    const copy = {
-      expired: "Your 15-minute hold ran out, so the date was released. Nothing was charged.",
-      cancelled: "That hold was cancelled, and nothing was charged.",
-      booked: "That date is already booked. If that was you, check your confirmation text.",
-    };
-    stepRoot().replaceChildren(
-      el("div", { class: "step-head" }, [el("h1", { class: "step-title", text: "That date was released" })]),
-      el("div", { class: "notice error" }, [
-        el("div", { text: copy[ui.dead] || copy.expired }),
-        el("div", { class: "alts" }, [
-          el("button", {
-            type: "button",
-            class: "chip",
-            text: "Pick another date",
-            onclick: () => { ui.dead = null; go("date"); },
-          }),
-        ]),
-      ])
-    );
-    renderRail();
-    renderAdvance();
+  // The only thing that restarts the clock: a fresh hold on the same slot, through the same endpoint and the
+  // same database constraint as any hold, so availability is re-checked for real.
+  async function reHold() {
+    const primary = $("hold-modal-primary");
+    primary.disabled = true;
+    primary.textContent = "Checking…";
+    const { status, data } = await api("/api/holds", {
+      method: "POST",
+      body: { slot_id: draft.slotId, replace_hold_id: draft.holdId },
+    });
+    if (status === 201) {
+      draft.holdId = data.hold_id;
+      draft.expiresAt = data.expires_at;
+      save();
+      holdModalClose();
+      setDeadline(data.seconds_remaining);
+      renderHoldHead();
+      pushDraft();
+      const email = (draft.contact && draft.contact.email) || "";
+      if (email.indexOf("@") > 0) api(`/api/holds/${draft.holdId}/email`, { method: "PATCH", body: { email: email } });
+      return;
+    }
+    primary.disabled = false;
+    primary.textContent = `Re-hold ${shortDate(draft.date)}`;
+    if (status === 409) {
+      // Someone else has it. The way back to the dates is the only option left.
+      ui.holdModal = "taken";
+      $("hold-modal-title").textContent = "That date was just taken";
+      $("hold-modal-text").textContent = `Someone else grabbed ${draft.dayLabel} while it was unheld. Your package and details are saved; pick another date.`;
+      primary.hidden = true;
+      $("hold-modal-secondary").textContent = "Pick another date";
+      return;
+    }
+    $("hold-modal-error").replaceChildren(el("p", { class: "notice error", text: detailText(data, "Couldn't re-hold that date. Try again.") }));
+  }
+
+  function leaveHold() {
+    holdModalClose();
+    ui.picked = null;
+    clearDraft();
+    go("date");
   }
 
   function renderDone() {
     const data = ui.done;
+    renderHoldHead();
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
         el("p", { class: "step-eyebrow", text: "Request sent" }),
@@ -1794,15 +1877,17 @@
       save();
     }
 
-    // A hold from an earlier visit may be gone; never show a step that implies a date we no longer hold.
+    // A hold from an earlier visit: ask the server how long is left (never restart locally). A hold the server
+    // has never heard of is dropped; one that merely expired is kept so the parent can re-hold it.
+    let staleStatus = null;
     if (holding()) {
       const check = await api(`/api/holds/${draft.holdId}`);
-      if (check.status !== 200 || check.data.status !== "pending_payment") clearDraft();
-      else {
+      if (check.status === 404) clearDraft();
+      else if (check.status === 200 && check.data.status === "pending_payment") {
         draft.expiresAt = check.data.expires_at;
-        ui.deadline = performance.now() + check.data.seconds_remaining * 1000;
         save();
-      }
+        setDeadline(check.data.seconds_remaining);
+      } else if (check.status === 200) staleStatus = check.data.status;
     }
     if (draft.package) requote();
 
@@ -1825,9 +1910,15 @@
     window.addEventListener("pageshow", (event) => {
       if (!event.persisted || !ui.catalog) return;
       ui.busy = false;
-      stopTimer();
       render(ui.step);
+      syncHold();
     });
+    // A tab that slept can have a stale local clock: the server's number is the only one that counts.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && ui.catalog && !ui.holdModal) syncHold();
+    });
+    // The modal has no other way out than its two buttons.
+    $("hold-modal").addEventListener("cancel", (event) => event.preventDefault());
     window.addEventListener("popstate", (event) => {
       const step = (event.state && event.state.step) || pathStep();
       go(step, "pop");
@@ -1837,6 +1928,7 @@
     const target = allowed(wanted) ? wanted : earliestIncomplete();
     history.replaceState({ step: target }, "", `/book/${target}`);
     render(target);
+    if (staleStatus) showHoldModal(staleStatus);
   }
 
   window.EncoreShell.mountFooter();
