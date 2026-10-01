@@ -1092,6 +1092,7 @@
     const form = validate();
     if (!form) return;
     const button = $("advance");
+    rememberForm();
     ui.busy = true;
     button.disabled = true;
     button.textContent = requesting() ? "Sending…" : "Starting secure checkout…";
@@ -1349,6 +1350,14 @@
         ui.popover = null;
         pop.hidden = true;
       }
+    });
+    // Back from the payment page can restore this page frozen mid-"Starting checkout…" from the browser's
+    // back/forward cache. Clear that, and re-check the hold, so every control works again.
+    window.addEventListener("pageshow", (event) => {
+      if (!event.persisted || !ui.catalog) return;
+      ui.busy = false;
+      stopTimer();
+      render(ui.step);
     });
     window.addEventListener("popstate", (event) => {
       const step = (event.state && event.state.step) || pathStep();

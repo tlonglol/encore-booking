@@ -33,14 +33,23 @@ app.include_router(webhooks.router)
 app.include_router(dev.router)
 app.include_router(admin.router)
 
+class RevalidatingFiles(StaticFiles):
+    """Dev/ngrok serving only: browsers check back every time instead of running a stale copy of the scripts."""
+
+    async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if get_settings().serve_frontend and FRONTEND_DIR.is_dir():
     # The funnel is a single-page app: every /book/* path gets the same shell, so refresh and pasted links work.
     # On CloudFront the same rewrite has to be configured there.
     @app.get("/book")
     @app.get("/book/{step:path}")
     def book_shell(step: str = "") -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "book.html")
+        return FileResponse(FRONTEND_DIR / "book.html", headers={"Cache-Control": "no-cache"})
 
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    app.mount("/", RevalidatingFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 handler = Mangum(app)
