@@ -1249,3 +1249,18 @@ img { max-width: 100%; }
 }
 .opt.on:not(.included) .addon-name { color: #fff; }
 .opt { transition: border-color 0.2s, background 0.2s, box-shadow 0.2s; }
+
+/* The one inline note on the Drinks card when a Pizza Pack already covers drinks: green, like "Included". */
+.opt { flex-wrap: wrap; }
+.opt-note {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(63, 185, 80, 0.22);
+  font-family: var(--condensed);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  color: var(--ok);
+}

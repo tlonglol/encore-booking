@@ -5,6 +5,8 @@
   const C = window.EncoreContent;
   const KEY = "encore.draft";
   const STEPS = ["date", "plan", "addons", "info"];
+  // Display copy only, mirroring "feeds about 10 kids" on the Pizza Pack card; never used for pricing.
+  const KIDS_PER_PIZZA_PACK = 10;
   const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "By request" };
   const DRAFT_KEYS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "package", "addons", "kids", "contact", "seenAddons", "seenInfo"];
   const DAY_MS = 86400000;
@@ -861,6 +863,7 @@
       sync();
       requote();
       renderRail();
+      refreshDrinksNote();
       touch();
     }
     minus.addEventListener("click", () => set(kidsValue() - 1));
@@ -893,6 +896,28 @@
     touch();
   }
 
+  // The Pizza Pack already includes drinks. When one is in the order, the Drinks Pack card says so, with
+  // capacity worked out from the headcount. It is only a note: neither stepper is ever changed for the parent.
+  function drinksNoteText() {
+    const packs = draft.addons.pizza_pack || 0;
+    if (packs < 1) return "";
+    const kids = kidsValue();
+    const covered = packs * KIDS_PER_PIZZA_PACK;
+    const one = packs === 1;
+    const what = one ? "Your Pizza Pack includes drinks." : `Your ${packs} Pizza Packs include drinks.`;
+    const covers = one ? "It covers" : "They cover";
+    if (covered >= kids) return `${what} ${covers} all ${kids} of your kids.`;
+    return `${what} ${covers} ~${covered} of your ${kids} kids. Add a Drinks Pack to cover everyone.`;
+  }
+
+  function refreshDrinksNote() {
+    const node = $("drinks-note");
+    if (!node) return;
+    const text = drinksNoteText();
+    node.textContent = text;
+    node.hidden = !text;
+  }
+
   function packOption(addon, iconBox, body) {
     const max = ui.catalog.max_pack_quantity;
     const qty = () => draft.addons[addon.key] || 0;
@@ -915,6 +940,8 @@
         el("div", { class: "stepper small", role: "group", "aria-label": `${addon.label} quantity` }, [minus, input, plus]),
       ]),
     ]);
+    // The note spans the whole card under the controls, instead of squeezing into the text column.
+    if (addon.key === "drinks_pack") card.append(el("div", { class: "opt-note", id: "drinks-note", "aria-live": "polite", hidden: true }));
     function sync() {
       const value = qty();
       card.classList.toggle("on", value > 0);
@@ -930,6 +957,7 @@
       sync();
       requote();
       renderRail();
+      refreshDrinksNote();
       touch();
     }
     minus.addEventListener("click", () => set(qty() - 1));
@@ -982,6 +1010,7 @@
         );
       })
     );
+    refreshDrinksNote();
   }
 
   // ---------- step 4: info + deposit ----------
