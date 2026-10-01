@@ -936,25 +936,43 @@
         if (event.target.value) applyBirthday(event.target.value);
       },
     });
-    const calendar = el("button", {
-      type: "button",
-      class: "seg-cal",
-      "aria-label": "Pick from calendar",
-      onclick: () => (native.showPicker ? native.showPicker() : native.focus()),
-    });
+    // A real button for keyboard users; its click bubbles to the control, which opens the calendar.
+    const calendar = el("button", { type: "button", class: "seg-cal", "aria-label": "Pick from calendar" });
     calendar.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
 
     const wrap = el("div", { class: "date-seg", role: "group", "aria-label": "Birthday" }, [
+      calendar,
       boxes[0],
       el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
       boxes[1],
       el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
       boxes[2],
-      calendar,
       native,
     ]);
+
+    // The whole control opens the calendar. The exception is a click on a box while the control already has
+    // focus (the parent is typing), which just places the caret. Focus is dropped when the calendar opens so
+    // the next click opens it again instead of being treated as typing.
+    let typing = false;
+    wrap.addEventListener("mousedown", () => {
+      typing = boxes.includes(document.activeElement);
+    });
+    wrap.addEventListener("click", (event) => {
+      if (event.target === native) return;
+      if (typing && event.target.closest(".seg")) return;
+      boxes.forEach((box) => box.blur());
+      if (native.showPicker) {
+        try {
+          native.showPicker();
+          return;
+        } catch (error) {
+          /* some browsers refuse outside a trusted gesture; fall through to focusing it */
+        }
+      }
+      native.focus();
+    });
     return wrap;
   }
 

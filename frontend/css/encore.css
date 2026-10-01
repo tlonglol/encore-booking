@@ -1416,3 +1416,31 @@ img { max-width: 100%; }
 /* Tighter gap under the step intro, so the controls sit closer to the sentence that introduces them. */
 .step-head { margin-bottom: 0.5rem; }
 .step-sub { margin-top: 0.4rem; }
+
+/* The birthday control is a button-like unit: [calendar  mm / dd / yyyy]. Click anywhere on it opens the calendar. */
+.bday-card .date-seg {
+  gap: 1px;
+  padding: 1px 12px 1px 8px;
+  background: rgba(26, 116, 204, 0.12);
+  border: 1px solid var(--blue-light);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.bday-card .date-seg:hover { border-color: #8cc3ff; background: rgba(26, 116, 204, 0.2); }
+.bday-card .date-seg:focus-within { border-color: #8cc3ff; background: rgba(26, 116, 204, 0.2); box-shadow: 0 0 0 2px rgba(26, 116, 204, 0.3); }
+.bday-card .date-seg:not(:focus-within) .seg { cursor: pointer; }
+.bday-card .date-seg .seg-cal {
+  width: 26px;
+  height: 28px;
+  margin: 0 4px 0 0;
+  color: var(--blue-light);
+  background: none;
+  cursor: pointer;
+}
+.bday-card .date-seg .seg-cal:hover { background: none; color: #8cc3ff; }
+.bday-card .date-seg .seg-cal:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 1px; border-radius: 4px; }
+.bday-card .date-seg .seg { background: transparent; }
+.bday-card .date-seg .seg-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.bday-card .date-seg { padding-right: 9px; }
+.bday-card .date-seg .seg { width: 27px; }
+.bday-card .date-seg .seg-y { width: 44px; }
