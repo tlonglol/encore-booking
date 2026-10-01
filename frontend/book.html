@@ -21,9 +21,14 @@
   <main class="funnel">
     <div class="funnel-main">
       <div class="hold-head" id="hold-head" hidden>
-        <span class="hold-what" id="hold-what"></span>
-        <span class="hold-when" id="hold-when"></span>
-        <span class="hold-timer" id="hold-timer"></span>
+        <span class="hold-unit">
+          <span class="hold-what" id="hold-what"></span>
+          <span class="hold-when" id="hold-when"></span>
+        </span>
+        <span class="hold-unit">
+          <span class="hold-timer" id="hold-timer" role="timer"></span>
+          <button class="hold-change" id="hold-change" type="button" hidden>Change date</button>
+        </span>
       </div>
       <div id="step"></div>
     </div>

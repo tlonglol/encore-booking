@@ -1601,7 +1601,7 @@
   // The hold row's expiry on the server is the only clock that matters. The client keeps one number, the
   // moment (on its own monotonic clock) the server said the hold would end, and only ever sets it from a
   // server response: at hold creation, on boot, on return to the tab, on a Re-hold. It is never restarted locally.
-  const LOW_SECONDS = 180;
+  const LOW_SECONDS = 120;
 
   function setDeadline(secondsRemaining) {
     ui.deadline = performance.now() + secondsRemaining * 1000;
@@ -1623,8 +1623,9 @@
     return ui.deadline === null ? null : (ui.deadline - performance.now()) / 1000;
   }
 
-  // "held · 14 min": whole minutes, rounded down so it never overstates, muted. Under three minutes it
-  // becomes mm:ss in the accent colour.
+  // Live mm:ss from the first second, muted, in tabular figures. Under two minutes it turns the accent
+  // colour, which is its only state change. The seconds are the point: a real countdown shown plainly reads
+  // as logistics, where a rounded "about 14 min" reads as a number someone made up.
   function paintTimer() {
     const node = $("hold-timer");
     if (!node) return;
@@ -1635,8 +1636,9 @@
       return;
     }
     const low = left < LOW_SECONDS;
-    const text = left <= 0 ? "expired" : low ? clock(Math.ceil(left)) : `held · ${Math.floor(left / 60)} min`;
+    const text = left <= 0 ? "expired" : clock(Math.ceil(left));
     if (node.textContent !== text) node.textContent = text;
+    node.setAttribute("aria-label", left <= 0 ? "Hold expired" : `${text} left on your hold`);
     node.classList.toggle("low", low);
   }
 
@@ -1657,6 +1659,8 @@
     }
     $("hold-what").textContent = requesting() ? "Requesting" : "Holding";
     $("hold-when").textContent = draft.timeLabel ? `${draft.dayLabel} · ${draft.timeLabel}` : draft.dayLabel;
+    // The way out sits next to the clock on every step but the one it leads to.
+    $("hold-change").hidden = !holding() || ui.step === "date";
     paintTimer();
   }
 
@@ -1919,6 +1923,7 @@
     });
     // The modal has no other way out than its two buttons.
     $("hold-modal").addEventListener("cancel", (event) => event.preventDefault());
+    $("hold-change").addEventListener("click", () => go("date"));
     window.addEventListener("popstate", (event) => {
       const step = (event.state && event.state.step) || pathStep();
       go(step, "pop");
