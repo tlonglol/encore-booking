@@ -42,19 +42,18 @@
     );
   }
 
-  // "Premium favor bags + Encore branded item" -> the highlighted part in blue, the rest plain.
-  function featureText(feature) {
-    if (!feature.hl || feature.text.indexOf(feature.hl) < 0) return [feature.text];
-    const [before, after] = feature.text.split(feature.hl);
-    return [before, el("span", { class: "feature-highlight", text: feature.hl }), after];
+  // "Premium favor bags + Encore branded item" -> the highlighted part in the tier accent, the rest plain.
+  function featureText(state) {
+    if (!state.hl || state.text.indexOf(state.hl) < 0) return [state.text];
+    const [before, after] = state.text.split(state.hl);
+    return [before, el("span", { class: "feature-highlight", text: state.hl }), after];
   }
 
   function packages(catalog) {
     $("pkg-grid").replaceChildren(
       ...catalog.packages.map((p) => {
         const featured = p.key === "plus";
-        const features = C.PACKAGE_FEATURES[p.key] || [];
-        return el("div", { class: "pkg-card" + (featured ? " featured" : "") }, [
+        return el("div", { class: "pkg-card" + (featured ? " featured" : ""), "data-tier": p.key }, [
           el("div", { class: "pkg-bar" }),
           el("div", { class: "pkg-header" }, [
             featured ? el("div", {}, [el("span", { class: "popular-tag", text: "Most Popular" })]) : null,
@@ -69,19 +68,19 @@
           el(
             "div",
             { class: "pkg-body" },
-            features.map((feature) =>
-              el("div", { class: "feature-row" + (feature.off ? " inactive" : "") }, [
-                el("span", { class: "check-wrap" + (feature.off ? " off" : ""), "aria-hidden": "true", text: "✓" }),
-                el("span", {}, featureText(feature)),
-              ])
-            )
+            C.FEATURES.map((feature) => {
+              const state = C.featureFor(feature, p.key);
+              return el("div", { class: "feature-row" + (state.on ? "" : " inactive") }, [
+                el("span", { class: "check-wrap" + (state.on ? "" : " off"), "aria-hidden": "true", text: "✓" }),
+                el("span", {}, featureText(state)),
+              ]);
+            })
           ),
           el("div", { class: "pkg-cta-wrap" }, [
-            el("button", {
-              type: "button",
+            el("a", {
               class: "pkg-cta" + (featured ? " primary" : ""),
-              text: `Choose ${p.label}`,
-              onclick: () => window.EncoreEngine.preselect(p.key),
+              href: `/book/date?pkg=${p.key}`,
+              text: "Book Now",
             }),
           ]),
         ]);
@@ -157,24 +156,18 @@
     all.textContent = "Read all 161 Google reviews →";
   }
 
-  // The price bar belongs to the engine, so it rides in and out with the engine's section.
-  function stickyBar() {
-    const bar = $("quote-bar");
-    const book = $("book");
-    if (!("IntersectionObserver" in window)) {
-      bar.classList.add("show");
-      document.body.classList.add("bar-on");
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries[0].isIntersecting;
-        bar.classList.toggle("show", visible);
-        document.body.classList.toggle("bar-on", visible);
-      },
-      { rootMargin: "0px 0px -120px 0px" }
+  // Door B: no tier chosen, price visible before the click.
+  function bookPanel(catalog) {
+    const floor = money(Math.min(...catalog.packages.map((p) => p.price_cents)));
+    $("book").replaceChildren(
+      el("h2", { class: "book-title", text: "Book Your Party" }),
+      el("p", { class: "book-sub", text: `Weekend morning slots fill fast. Private venue parties from ${floor}, and a $100 deposit holds your date.` }),
+      el("div", { class: "book-actions" }, [
+        el("a", { class: "btn btn-primary", href: "/book/date", text: "See open weekends" }),
+        el("a", { class: "btn btn-ghost", href: "tel:+16462038087", text: "Call (646) 203-8087" }),
+      ]),
+      el("p", { class: "fine", text: C.REFUND_PROMISE })
     );
-    observer.observe(book);
   }
 
   async function boot() {
@@ -194,8 +187,7 @@
     }
     packages(data);
     addons(data);
-    stickyBar();
-    await window.EncoreEngine.boot(data);
+    bookPanel(data);
   }
 
   boot();

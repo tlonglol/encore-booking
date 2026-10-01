@@ -45,121 +45,17 @@
     <div class="quotes-grid" id="quotes-grid"></div>
     <a class="reviews-all" id="reviews-all" target="_blank" rel="noopener"></a>
 
-    <!-- 10. The booking engine -->
+    <!-- 10. Door B into the funnel -->
     <div class="section-label">Book Your Party</div>
-    <section class="book-panel" id="book" aria-labelledby="book-title">
-      <h2 class="book-title" id="book-title">Book Your Party</h2>
-      <p class="book-sub" id="book-sub">Weekend morning slots fill fast. Pick your date, build your party, and lock it in with a $100 deposit &mdash; the balance is due the day of the party.</p>
-
-      <ol class="steps" id="steps" aria-label="Booking steps"></ol>
-      <div class="hold-line" id="hold-line" hidden></div>
-      <div id="engine-notice" aria-live="polite"></div>
-
-      <!-- Step 1: date -->
-      <div class="step-panel" id="step-date">
-        <div id="resume-notice"></div>
-        <div id="slots"><p class="muted">Loading dates&hellip;</p></div>
-        <div class="asks">
-          <button type="button" class="btn btn-ghost btn-block" id="weekday-toggle" aria-expanded="false" aria-controls="weekday-form">Want a weekday? Tell us your date</button>
-          <form id="weekday-form" class="ask-form" hidden novalidate>
-            <div class="field">
-              <label for="weekday-date">Your date</label>
-              <input id="weekday-date" type="date" required>
-            </div>
-            <button type="submit" class="btn btn-primary">Continue</button>
-            <p class="ask-error" id="weekday-error" role="alert"></p>
-          </form>
-          <button type="button" class="btn btn-ghost btn-block" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-form">Don't see your date? Get notified</button>
-          <form id="waitlist-form" class="ask-form" hidden novalidate>
-            <div class="field">
-              <label for="waitlist-email">Your email</label>
-              <input id="waitlist-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
-            </div>
-            <button type="submit" class="btn btn-primary">Notify me</button>
-            <p class="ask-note" id="waitlist-note" role="status"></p>
-          </form>
-        </div>
-      </div>
-
-      <!-- Step 2: package -->
-      <div class="step-panel" id="step-package" hidden>
-        <div class="pick-grid" id="pick-grid"></div>
-      </div>
-
-      <!-- Step 3: extras -->
-      <div class="step-panel" id="step-addons" hidden>
-        <p class="muted small" style="margin-bottom:1rem">All optional. Your total updates in the bar below as you pick &mdash; nothing here moves you forward.</p>
-        <div class="opt-grid" id="opt-grid"></div>
-      </div>
-
-      <!-- Step 4: confirm -->
-      <div class="step-panel" id="step-confirm" hidden>
-        <form id="pay-form" class="form-grid" novalidate>
-          <div class="field full"><label for="email">Parent email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
-          <div class="field"><label for="parent_name">Parent name</label><input id="parent_name" name="parent_name" autocomplete="name" placeholder="Your name" required maxlength="120"></div>
-          <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
-          <div class="field"><label for="kid_name">Kid's name</label><input id="kid_name" name="kid_name" placeholder="The birthday kid" required maxlength="60"></div>
-          <div class="field"><label for="kid_age">Kid's age</label><input id="kid_age" name="kid_age" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 9" required maxlength="2"></div>
-          <div class="field"><label for="kids">Estimated headcount</label><input id="kids" name="kids" type="text" inputmode="numeric" pattern="[0-9]*" required maxlength="2"></div>
-          <div class="field" id="time-field" hidden><label for="preferred_time">Preferred start time</label>
-            <select id="preferred_time" name="preferred_time">
-              <option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option>
-              <option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option>
-              <option value="13:00">1:00 PM</option><option value="14:00">2:00 PM</option>
-              <option value="15:00">3:00 PM</option><option value="16:00" selected>4:00 PM</option>
-              <option value="17:00">5:00 PM</option><option value="18:00">6:00 PM</option>
-              <option value="19:00">7:00 PM</option><option value="20:00">8:00 PM</option>
-            </select>
-          </div>
-        </form>
-
-        <div class="pay-summary">
-          <div class="roll">
-            <div class="total" id="summary-total">&mdash;</div>
-            <button class="quote-toggle" id="summary-toggle" type="button" aria-expanded="false" aria-controls="summary-lines">Details</button>
-          </div>
-          <ul class="quote-lines" id="summary-lines" hidden></ul>
-          <p class="deposit-math" id="deposit-math"></p>
-        </div>
-
-        <p class="risk-line" id="risk-line">Free reschedule up to 7 days before your party. Deposit fully refundable for 14 days.</p>
-        <div id="pay-error" role="alert"></div>
-        <button class="btn btn-primary btn-block" id="pay-button" type="button">Pay $100 &amp; lock it in</button>
-        <p class="fine" id="pay-fine">Secure checkout by Square. You'll come right back here for your confirmation.</p>
-      </div>
-
-      <!-- Request sent -->
-      <div class="step-panel hold-panel" id="step-done" hidden aria-live="polite">
-        <p class="hold-caption">Request sent</p>
-        <h3 class="book-title">We'll text you</h3>
-        <p class="summary-line" id="request-summary"></p>
-        <p class="book-sub">No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087.</p>
-      </div>
-
-      <!-- Hold released -->
-      <div class="step-panel" id="step-dead" hidden aria-live="polite"></div>
-    </section>
+    <section class="book-panel" id="book" aria-labelledby="book-title"></section>
   </main>
 
   <footer class="page-footer" id="footer"></footer>
-
-  <div class="quote-bar" id="quote-bar">
-    <div class="quote-inner">
-      <div class="quote-main">
-        <div class="quote-total" id="quote-total">&mdash;</div>
-        <div class="quote-split" id="quote-split"></div>
-        <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines" hidden>Details</button>
-      </div>
-      <ul class="quote-lines" id="quote-lines" hidden></ul>
-      <div class="quote-cta" id="quote-cta" hidden></div>
-    </div>
-  </div>
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/content.js"></script>
   <script src="js/shell.js"></script>
-  <script src="js/engine.js"></script>
   <script src="js/site.js"></script>
 </body>
 </html>

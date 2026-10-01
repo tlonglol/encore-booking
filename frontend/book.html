@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <meta name="robots" content="noindex">
+  <title>Book a Party · Encore Esports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/encore.css">
+</head>
+<body class="funnel-body">
+  <header class="banner">
+    <a class="nav-logo" href="/index.html">ENCORE <span>ESPORTS</span></a>
+    <a class="banner-phone" href="tel:+16462038087">(646) 203-8087</a>
+  </header>
+
+  <main class="funnel">
+    <div class="funnel-main" id="step"></div>
+
+    <aside class="rail" id="rail" aria-label="Party summary">
+      <button class="rail-handle" id="rail-handle" type="button" aria-expanded="false" aria-controls="rail-body">
+        <span>Party summary</span>
+        <span class="rail-handle-caret" aria-hidden="true">▲</span>
+      </button>
+      <div class="rail-body" id="rail-body">
+        <div class="rail-title">Party Summary</div>
+        <ol class="rail-steps" id="rail-steps"></ol>
+      </div>
+      <div class="rail-foot">
+        <div class="rail-money" id="rail-money"></div>
+        <button class="btn btn-primary btn-block" id="advance" type="button" disabled>Pick a date</button>
+        <p class="rail-note" id="rail-note"></p>
+      </div>
+    </aside>
+  </main>
+
+  <dialog class="drawer" id="compare" aria-labelledby="compare-title">
+    <div class="drawer-head">
+      <h2 class="drawer-title" id="compare-title">Compare all plans</h2>
+      <button class="drawer-close" id="compare-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="drawer-body" id="compare-body"></div>
+  </dialog>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/content.js"></script>
+  <script src="/js/book.js"></script>
+</body>
+</html>

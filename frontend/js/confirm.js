@@ -87,7 +87,7 @@
   }
 
   function showBooked(party) {
-    store("encore.funnel", null);
+    store("encore.draft", null);
     view.replaceChildren(
       el("p", { class: "hold-caption", text: party.first_name ? `You're all set, ${party.first_name}` : "You're all set" }),
       title("You're", "booked!"),
@@ -142,7 +142,7 @@
           }
           return;
         case "paid_after_expiry":
-          store("encore.funnel", null);
+          store("encore.draft", null);
           showMessage(
             "Payment",
             "received",
@@ -150,11 +150,11 @@
           );
           return;
         case "expired":
-          store("encore.funnel", null);
+          store("encore.draft", null);
           showMessage("Hold", "expired", "Your 15-minute hold ran out before payment arrived, so the date was released. If you did pay, we'll call you.", [bookAgain()]);
           return;
         case "cancelled":
-          store("encore.funnel", null);
+          store("encore.draft", null);
           showMessage("Hold", "cancelled", "This hold was cancelled, and no booking was made. Questions? Call (646) 203-8087.", [bookAgain()]);
           return;
         default:
