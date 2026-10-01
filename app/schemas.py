@@ -51,6 +51,14 @@ class HoldEmailIn(BaseModel):
     email: EmailStr
 
 
+class DraftIn(BaseModel):
+    """What the parent has chosen so far. No prices: the server computes them."""
+
+    package: str
+    kids: int
+    addons: dict[str, int] = Field(default_factory=dict)
+
+
 class CheckoutIn(BaseModel):
     package: str
     kids: int

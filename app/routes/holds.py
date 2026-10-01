@@ -13,6 +13,7 @@ from app.routes.availability import day_out
 from app.schemas import (
     CheckoutIn,
     CheckoutOut,
+    DraftIn,
     HoldCreatedOut,
     HoldEmailIn,
     HoldRequest,
@@ -24,6 +25,7 @@ from app.schemas import (
 from app.models import Slot
 from app.services.holds import (
     CheckoutInput,
+    draft_hold,
     HoldLimitReached,
     HoldNotPending,
     SlotNotFound,
@@ -111,6 +113,25 @@ def patch_hold_email(hold_id: str, body: HoldEmailIn, db: Session = Depends(get_
     """Abandoner recovery: saved on blur, long before the pay button. A dead hold is left alone."""
     saved = save_email(db, _parse_hold_id(hold_id), str(body.email))
     return {"saved": saved}
+
+
+@router.patch("/api/holds/{hold_id}/draft", response_model=PartyDetails)
+def patch_hold_draft(hold_id: str, body: DraftIn, db: Session = Depends(get_db)) -> Any:
+    """Mirrors the funnel's draft onto the hold, priced server-side. Nothing here finalizes anything."""
+    try:
+        hold = draft_hold(db, _parse_hold_id(hold_id), body.package, body.kids, body.addons)
+    except (PricingError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except SlotNotFound as error:
+        raise HTTPException(status_code=404, detail="Hold not found") from error
+    except HoldNotPending as error:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "This hold is no longer active, so the date was released.", "status": error.status},
+        )
+    slot = db.get(Slot, hold.slot_id)
+    assert slot is not None
+    return party_details(hold, slot.starts_at, None, None)
 
 
 @router.post("/api/holds/{hold_id}/checkout", response_model=CheckoutOut)

@@ -75,7 +75,7 @@
           b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
           el("div", { class: "card-meta small muted", text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}` + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "") }),
           el("div", { class: "card-actions" }, [
-            el("span", { class: "pill" + (b.full_refund ? " ok" : " warn"), text: b.full_refund ? "Full refund if cancelled" : "Inside 7 days: no automatic full refund" }),
+            el("span", { class: "pill" + (b.full_refund ? " ok" : " warn"), text: b.full_refund ? "Full refund if cancelled" : "Inside 7 days: no refund, one reschedule" }),
             b.cancelled_at
               ? null
               : confirmButton("Cancel booking", "Tap again to cancel", async () => {

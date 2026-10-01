@@ -204,7 +204,8 @@ def test_email_body_has_everything_the_parent_needs(db: Session, engine: Engine)
         "  Deposit received: $100",
         "  Balance due day of party: $444",
         "538 Main St, 2nd floor, entrance on Division St.",
-        "full refund if you cancel 7 or more days before your party",
+        "Cancel or reschedule free up to 7 days before your party.",
+        "you can reschedule once",
         "(646) 203-8087",
     ):
         assert expected in body, expected

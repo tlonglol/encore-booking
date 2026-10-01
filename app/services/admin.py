@@ -32,9 +32,7 @@ def list_bookings(db: Session) -> list[Row]:
                        b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email,
                        b.kid_name, b.kid_age, b.notes,
                        b.square_payment_id, b.created_at, b.cancelled_at, b.cancel_reason,
-                       (b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days'
-                        OR (coalesce(b.cancelled_at, now()) - b.created_at <= interval '14 days'
-                            AND coalesce(b.cancelled_at, now()) <= b.event_starts_at)) AS full_refund
+                       b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund
                 FROM bookings b
                 ORDER BY b.cancelled_at IS NOT NULL, b.event_starts_at
                 """
@@ -57,8 +55,7 @@ def cancel_booking(db: Session, booking_id: int, reason: str | None) -> Cancelle
     cancelled = db.execute(
         text(
             "UPDATE bookings SET cancelled_at = now(), cancel_reason = :reason WHERE id = :id"
-            " RETURNING cancelled_at, (event_starts_at - now() >= interval '7 days'"
-            " OR (now() - created_at <= interval '14 days' AND now() <= event_starts_at)) AS full_refund"
+            " RETURNING cancelled_at, event_starts_at - now() >= interval '7 days' AS full_refund"
         ),
         {"id": booking_id, "reason": reason},
     ).one()

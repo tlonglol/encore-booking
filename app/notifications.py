@@ -21,6 +21,10 @@ from app.timeutil import format_clock, format_date, format_day, format_time
 TWILIO_URL = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 REQUEST_TIMEOUT_SECONDS = 5.0
 VENUE_DETAILS = "538 Main St, 2nd floor, entrance on Division St. Questions: (646) 203-8087."
+REFUND_PROMISE = (
+    "Cancel or reschedule free up to 7 days before your party. Inside 7 days your deposit isn't refundable,"
+    " but you can reschedule once."
+)
 SMTP_SSL_PORT = 465
 
 log = logging.getLogger(__name__)
@@ -99,7 +103,7 @@ def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
             "",
             "Where: Encore Esports, 538 Main St, 2nd floor, entrance on Division St.",
             "",
-            "Refunds: full refund if you cancel 7 or more days before your party.",
+            REFUND_PROMISE,
             "",
             "Questions? Call (646) 203-8087.",
             "",

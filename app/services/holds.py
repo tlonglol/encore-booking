@@ -167,6 +167,34 @@ def save_email(db: Session, hold_id: uuid.UUID, email: str) -> bool:
     return updated is not None
 
 
+def draft_hold(db: Session, hold_id: uuid.UUID, package: str, kids: int, addons: dict[str, int]) -> Hold:
+    """The party as the parent builds it, priced by the same function checkout uses. Never touches contact
+    details, the payment link, or the hold's status; checkout re-prices before any money moves."""
+    priced = quote(package, kids, addons)
+    row = db.execute(
+        select(Hold, func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"))
+        .where(Hold.id == hold_id)
+        .with_for_update(of=Hold)
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if row is None:
+        db.rollback()
+        raise SlotNotFound()
+    hold, remaining = row
+    if hold.status != "pending_payment" or remaining <= 0:
+        status = "expired" if hold.status == "pending_payment" else hold.status
+        db.rollback()
+        raise HoldNotPending(status)
+    hold.package = priced.package
+    hold.kids = priced.kids
+    hold.addons = priced.addons
+    hold.line_items = priced.line_items_json()
+    hold.total_cents = priced.total_cents
+    db.commit()
+    db.refresh(hold)
+    return hold
+
+
 def _enforce_contact_caps(db: Session, hold_id: uuid.UUID, phone: str, email: str) -> None:
     """One active hold per phone and per email, checked when the contact is first known."""
     db.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:key))"), {"ns": LOCK_PHONE, "key": phone})
