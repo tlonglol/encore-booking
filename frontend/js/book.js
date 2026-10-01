@@ -38,6 +38,7 @@
     deadline: null,
     timer: null,
     popover: null,
+    picked: null,
     dead: null,
     done: null,
   };
@@ -279,8 +280,14 @@
     }
     button.hidden = false;
     if (ui.step === "date") {
-      button.disabled = true;
-      button.textContent = draft.package ? `Pick a date for ${pkg().label}` : "Pick a date";
+      button.onclick = confirmDate;
+      button.disabled = !ui.picked || ui.busy;
+      button.textContent = ui.picked
+        ? `Confirm ${shortDate(ui.picked.date)}`
+        : draft.package
+        ? `Pick a date for ${pkg().label}`
+        : "Pick a date";
+      note.textContent = ui.picked && ui.picked.status !== "request" ? "Confirming holds this date for 15 minutes." : "";
       return;
     }
     if (ui.step === "plan") {
@@ -338,7 +345,7 @@
         type: "button",
         class: "chip",
         text: `${alt.day_label}${alt.time_label ? ` ${alt.time_label}` : ""}`,
-        onclick: () => pickDate(ui.days.find((d) => d.date === alt.date) || alt),
+        onclick: () => selectDate(ui.days.find((d) => d.date === alt.date) || alt),
       })
     );
     box.replaceChildren(
@@ -387,7 +394,7 @@
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
         el("h1", { class: "step-title", text: "Pick your date" }),
-        el("p", { class: "step-sub", text: "Saturday and Sunday mornings at 10:00 AM. Tapping a date holds it for 15 minutes while you finish." }),
+        el("p", { class: "step-sub", text: "Saturday and Sunday mornings at 10:00 AM. Pick a date, then confirm it to hold it for 15 minutes while you finish." }),
       ]),
       strip,
       el("div", { id: "step-notice", "aria-live": "polite" }),
@@ -447,7 +454,16 @@
     ui.firstBookable = data.first_bookable_date;
     const input = $("weekday-date");
     if (input) input.min = data.first_bookable_date;
+    if (ui.picked && ui.picked.slot_id) {
+      const fresh = ui.days.find((d) => d.date === ui.picked.date);
+      const mine = holding() && ui.picked.slot_id === draft.slotId;
+      if (!mine && (!fresh || fresh.status !== "open")) {
+        notice(`${ui.picked.day_label} just became unavailable. Pick another date.`, [], true);
+        ui.picked = null;
+      }
+    }
     renderGrid();
+    renderAdvance();
   }
 
   function weekendGroups() {
@@ -490,17 +506,19 @@
               { class: "wk-cards" },
               group.map((day) => {
                 const mine = holding() && day.slot_id === draft.slotId;
+                const picked = Boolean(ui.picked) && ui.picked.date === day.date;
                 const tappable = mine || day.status === "open" || day.status === "request";
-                const label = mine ? "Your date" : STATUS_TEXT[day.status];
+                const label = picked ? "Selected" : mine ? "Your date" : STATUS_TEXT[day.status];
                 const live = day.status === "open" || day.status === "request" || mine;
                 return el(
                   "button",
                   {
                     type: "button",
-                    class: `wk-card ${mine ? "open yours" : day.status}`,
+                    class: `wk-card ${picked || mine ? "open yours" : day.status}`,
                     disabled: !tappable,
+                    "aria-pressed": String(picked),
                     "aria-label": `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
-                    onclick: !tappable ? null : mine ? () => go(afterDate()) : () => pickDate(day),
+                    onclick: !tappable ? null : () => selectDate(day),
                   },
                   [
                     el("span", { class: "wk-date", text: day.day_label }),
@@ -523,27 +541,14 @@
     );
   }
 
-  // Tab switch: prices crossfade to the tier colour and the numbers tween to the new values.
+  // Tab switch: the prices change colour (a CSS crossfade) and the numbers swap at once.
   function tweenPrices(toCents) {
     const prefix = draft.package ? "" : "from ";
     document.querySelectorAll(".wk-price").forEach((node) => {
-      const from = Number(node.dataset.cents || 0);
       node.dataset.cents = String(toCents);
-      const num = node.querySelector(".wk-price-num");
       node.firstChild.textContent = prefix;
-      if (!num) return;
-      if (REDUCED.matches || !from || from === toCents) {
-        num.textContent = dollars(toCents);
-        return;
-      }
-      const start = performance.now();
-      function frame(now) {
-        const t = Math.min(1, (now - start) / 200);
-        const eased = 1 - Math.pow(1 - t, 3);
-        num.textContent = dollars(from + (toCents - from) * eased);
-        if (t < 1) requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
+      const num = node.querySelector(".wk-price-num");
+      if (num) num.textContent = dollars(toCents);
     });
   }
 
@@ -619,8 +624,23 @@
     );
   }
 
-  async function pickDate(day) {
+  // Tapping a date only selects it. Nothing is held and the page stays put until Confirm.
+  function selectDate(day) {
     notice(null);
+    ui.picked = day;
+    renderGrid();
+    renderAdvance();
+  }
+
+  async function confirmDate() {
+    const day = ui.picked;
+    if (!day || ui.busy) return;
+    notice(null);
+    if (holding() && day.slot_id === draft.slotId) {
+      ui.picked = null;
+      go(afterDate());
+      return;
+    }
     if (day.status === "request") {
       draft.mode = "request";
       draft.holdId = null;
@@ -629,6 +649,7 @@
       draft.dayLabel = day.day_label;
       draft.timeLabel = null;
       draft.expiresAt = null;
+      ui.picked = null;
       save();
       go(afterDate());
       return;
@@ -650,12 +671,14 @@
       draft.timeLabel = data.time_label;
       draft.expiresAt = data.expires_at;
       ui.deadline = performance.now() + data.seconds_remaining * 1000;
+      ui.picked = null;
       save();
       pushDraft();
       go(afterDate());
       return;
     }
     if (status === 409) {
+      ui.picked = null;
       await loadGrid();
       const alts = data.alternatives || [];
       notice(`Sorry, ${day.day_label} was just taken. ${alts.length ? "These are still open:" : "No other dates are open right now."}`, alts, true);
@@ -1246,7 +1269,7 @@
     if (date > shiftDate(ui.today, 366)) return void (error.textContent = "That's more than a year out. Check the year, or call (646) 203-8087.");
     const listed = ui.days.find((d) => d.date === date);
     if (listed && listed.status !== "request") {
-      if (listed.status === "open") pickDate(listed);
+      if (listed.status === "open") selectDate(listed);
       else error.textContent = `${listed.day_label} is ${listed.status === "booked" ? "booked" : "not available online"}. Call (646) 203-8087 if you need that date.`;
       return;
     }
@@ -1254,7 +1277,7 @@
       error.textContent = "Weekends are booked online for the next 8 weekends. For a later weekend, call (646) 203-8087.";
       return;
     }
-    pickDate({ date: date, day_label: dayLabelFor(date), status: "request", slot_id: null, time_label: null });
+    selectDate({ date: date, day_label: dayLabelFor(date), status: "request", slot_id: null, time_label: null });
   }
 
   async function submitWaitlist(event) {
