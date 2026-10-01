@@ -39,13 +39,13 @@
   const TIERS = ["standard", "plus", "premium"];
   const TIER_ACCENT = { standard: "var(--tier-standard)", plus: "var(--tier-plus)", premium: "var(--tier-premium)" };
 
-  // One feature matrix for every surface that explains a tier: the landing cards, the diff strip, the tab
+  // One feature matrix for every surface that explains a tier: the landing cards, the tab
   // popovers and the compare drawer all read this, so they cannot drift apart.
   //   all   - every tier includes it, same wording
   //   text  - per-tier wording; a tier listed here includes the feature
   //   off   - the greyed wording shown for a tier that does not include it
   //   hl    - the substring shown in the tier accent
-  //   short - the compact wording used in diff strips and summaries
+  //   short - the compact wording used in the rail and the compare drawer
   const FEATURES = [
     {
       id: "games",
@@ -138,24 +138,6 @@
     return FEATURES.filter(function (feature) { return includes(feature, tier); }).slice(0, 3);
   }
 
-  // What changes moving between two tiers: added or upgraded going up, lost or downgraded going down.
-  function diff(fromTier, toTier) {
-    const up = TIERS.indexOf(toTier) > TIERS.indexOf(fromTier);
-    const items = [];
-    FEATURES.forEach(function (feature) {
-      const inFrom = includes(feature, fromTier);
-      const inTo = includes(feature, toTier);
-      if (inTo && !inFrom) {
-        if (up) items.push(shortFor(feature, toTier));
-      } else if (inFrom && !inTo) {
-        if (!up) items.push(shortFor(feature, fromTier));
-      } else if (inFrom && inTo && featureFor(feature, fromTier).text !== featureFor(feature, toTier).text) {
-        items.push(shortFor(feature, up ? toTier : fromTier));
-      }
-    });
-    return { up: up, items: items };
-  }
-
   const BUYOUT = {
     eyebrow: "Outside Normal Birthday Hours?",
     title: "Rent the whole place.",
@@ -227,7 +209,6 @@
     rowLabel: rowLabel,
     varies: varies,
     highlights: highlights,
-    diff: diff,
     BUYOUT: BUYOUT,
     ADDON_ORDER: ADDON_ORDER,
     ADDONS: ADDONS,

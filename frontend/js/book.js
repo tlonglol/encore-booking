@@ -434,7 +434,6 @@
           ])
         )
       ),
-      el("div", { class: "diff-strip", id: "diff-strip" }),
       el("div", { class: "tab-pop", id: "tab-pop", hidden: true }),
       el("div", { class: "bday" }, [
         el("label", { for: "bday" }, ["When's the big day? ", el("span", { class: "bday-opt", text: "(optional)" })]),
@@ -483,7 +482,6 @@
         ]),
       ])
     );
-    renderDiff(null);
     renderGrid();
     loadGrid();
   }
@@ -721,7 +719,6 @@
       cell.classList.toggle("active", active);
       cell.querySelector(".tab-btn").setAttribute("aria-selected", String(active));
     });
-    renderDiff(previous);
     tweenPrices(pkg().price_cents);
     ui.popover = null;
     $("tab-pop").hidden = true;
@@ -729,33 +726,6 @@
     renderMoney();
     renderAdvance();
     touch();
-  }
-
-  function renderDiff(previous) {
-    const strip = $("diff-strip");
-    if (!strip) return;
-    if (!draft.package) {
-      strip.replaceChildren(el("span", { class: "diff-muted", text: "Every plan is a private full-venue buyout. Pick a tier to see what changes, or just pick a date." }));
-      return;
-    }
-    const from = previous || (draft.package === "standard" ? null : "standard");
-    const label = pkg().label;
-    if (!from) {
-      const items = C.highlights("standard").map((feature) => C.shortFor(feature, "standard"));
-      strip.replaceChildren(
-        el("b", { text: `${label} includes: ` }),
-        items.join(", "),
-        el("span", { class: "diff-delta", text: ` · ${dollars(pkg().price_cents)}` })
-      );
-      return;
-    }
-    const change = C.diff(from, draft.package);
-    const delta = pkg().price_cents - pkg(from).price_cents;
-    strip.replaceChildren(
-      el("b", { text: `${label} ${change.up ? "adds" : "drops"}: ` }),
-      change.items.join(", "),
-      el("span", { class: "diff-delta", text: ` · ${delta >= 0 ? "+" : "−"}${dollars(Math.abs(delta))}` })
-    );
   }
 
   function togglePopover(key) {
