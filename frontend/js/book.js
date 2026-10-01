@@ -357,7 +357,21 @@
   }
 
   // ---------- step 1: date ----------
+  // Coming back to the date step keeps the confirmed date selected, so the rail offers
+  // "Confirm {date}" again instead of making the parent pick it twice.
+  function restorePicked() {
+    if (ui.picked || !draft.date) return;
+    ui.picked = {
+      date: draft.date,
+      day_label: draft.dayLabel,
+      time_label: draft.timeLabel,
+      slot_id: draft.slotId,
+      status: requesting() ? "request" : "open",
+    };
+  }
+
   function renderDate() {
+    restorePicked();
     const strip = el("div", { class: "tabs-wrap" }, [
       el(
         "div",
