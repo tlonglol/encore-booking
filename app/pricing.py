@@ -1,5 +1,8 @@
 from dataclasses import asdict, dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+
+from app.config import get_settings
 
 DEPOSIT_CENTS = 10000
 ADDITIONAL_KID_CENTS = 3500
@@ -92,8 +95,20 @@ def _normalize_addons(requested: dict[str, int]) -> dict[str, int]:
     return selected
 
 
+def tax_rate() -> Decimal:
+    """The sales tax percent to add as its own line. Zero when the prices already include it."""
+    settings = get_settings()
+    return settings.tax_rate_percent if settings.tax_mode == "line_item" else Decimal("0")
+
+
+def tax_on(taxable_cents: int, rate_percent: Decimal) -> int:
+    """Exact decimal arithmetic, rounded half up. Money never passes through a float."""
+    return int((Decimal(taxable_cents) * rate_percent / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 def quote(package_key: str, kids: int, addons: dict[str, int]) -> Quote:
-    """The only place prices are computed. Used by /api/quote and at hold creation."""
+    """The only place prices are computed. Used by /api/quote, drafts, checkout and requests, so the tax
+    setting is read here rather than threaded through every caller, where one could drift from the rest."""
     package = PACKAGES.get(package_key)
     if package is None:
         raise PricingError(f"Unknown package: {package_key}")
@@ -121,6 +136,11 @@ def quote(package_key: str, kids: int, addons: dict[str, int]) -> Quote:
         elif key in selected:
             quantity = selected[key]
             items.append(LineItem(key, addon.label, quantity, addon.price_cents, quantity * addon.price_cents))
+
+    rate = tax_rate()
+    if rate > 0:
+        tax = tax_on(sum(item.amount_cents for item in items), rate)
+        items.append(LineItem("sales_tax", "Sales tax", 1, tax, tax))
 
     total = sum(item.amount_cents for item in items)
     hours = package.hours + (1 if "extra_hour" in selected else 0)

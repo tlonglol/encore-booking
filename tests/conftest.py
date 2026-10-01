@@ -30,6 +30,8 @@ TEST_ENV = {
     "FRONTEND_ORIGIN": "http://testserver",
     "SERVE_FRONTEND": "false",
     "MIN_LEAD_DAYS": "2",
+    "TAX_MODE": "included",
+    "TAX_RATE_PERCENT": "0",
     "WEEKEND_DEFAULT": "open",
     "WEEKENDS_AHEAD": "8",
     "ADMIN_PASSWORD": "test-admin-password",

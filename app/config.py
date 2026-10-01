@@ -1,4 +1,5 @@
 import os
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -13,6 +14,11 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:8000"
     serve_frontend: bool = False
     min_lead_days: int = 2
+    # How the receipt states tax. "included": prices already include it, the receipt says so.
+    # "line_item": a server-computed Sales tax line is added to every quote at tax_rate_percent.
+    # A decimal percent (New Rochelle is 8.375), kept exact: rates like that are not whole basis points.
+    tax_mode: Literal["included", "line_item"] = "included"
+    tax_rate_percent: Decimal = Decimal("0")
     weekend_default: Literal["open", "request"] = "open"
     weekends_ahead: int = 8
     admin_password: str = ""

@@ -1451,3 +1451,60 @@ img { max-width: 100%; }
 .bday-card .date-seg:not(:focus-within) .seg { cursor: text; }
 .bday-card .date-seg .seg { cursor: text; }
 .bday-card .date-seg .seg-cal { width: 32px; }
+
+/* ── Money reads like a receipt ──────────────────────────────────────────
+   Body font, sentence case, tabular figures, modest and bold. Never the display-caps face,
+   and never caps + oversized + colour stacked on one line. */
+.rail-total, .rail-today, .rail-today-amt, .rail-due, .rail-lead, .receipt, .pay-summary {
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rail-total { font-size: 17px; font-weight: 700; line-height: 1.3; color: var(--white); }
+.rail-today { font-size: 14px; font-weight: 400; }
+.rail-today-amt { font-weight: 700; }
+.rail-due { font-size: 13px; }
+.rail-lead { font-size: 17px; font-weight: 700; color: var(--tier); transition: color 200ms ease; }
+
+/* The ledger: labels left, amounts right. */
+.receipt { display: grid; gap: 3px; font-size: 14px; color: var(--gray-light); }
+.rc-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.rc-amt { flex: none; }
+.rc-row.rc-total { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); color: var(--white); font-weight: 700; }
+.rc-row.rc-due-today { color: var(--tier); font-weight: 700; transition: color 200ms ease; }
+.rc-note { font-size: 12px; color: var(--gray); margin-top: -1px; }
+
+/* Exactly one money block per viewport: the rail on desktop, the inline block on a phone. */
+.receipt { display: none; }
+.rail.open .receipt { display: grid; }
+.pay-summary { display: grid; margin-top: 1.25rem; padding: 1rem 1.1rem; background: rgba(5, 5, 5, 0.35); border: 1px solid var(--border-blue); border-radius: 8px; }
+.pay-summary .receipt { display: grid; }
+
+@media (min-width: 769px) {
+  .rail-total { font-size: 18px; }
+  .rail-today { font-size: 14px; }
+  .rail-due { font-size: 13px; }
+  .rail-lead { display: none; }
+  .rail .receipt { display: grid; }
+  .pay-summary { display: none; }
+}
+
+/* The calendar button is its own zone at the right edge: full height, divided off, the only picker trigger. */
+.bday-card .date-seg { padding: 0 0 0 10px; overflow: hidden; cursor: auto; }
+.bday-card .date-seg:hover { background: rgba(26, 116, 204, 0.12); }
+.seg-fields { display: flex; align-items: center; gap: 1px; padding: 5px 0; cursor: text; }
+.bday-card .date-seg .seg-cal {
+  align-self: stretch;
+  width: 40px;
+  height: auto;
+  margin: 0 0 0 10px;
+  border-radius: 0;
+  border-left: 1px solid rgba(26, 116, 204, 0.5);
+  background: rgba(26, 116, 204, 0.12);
+  color: var(--blue-light);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.bday-card .date-seg .seg-cal:hover { background: rgba(26, 116, 204, 0.3); color: #cfe4ff; }
+.bday-card .date-seg .seg-cal:focus-visible { outline: 2px solid var(--blue-light); outline-offset: -2px; }

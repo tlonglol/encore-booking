@@ -103,3 +103,60 @@ def test_catalog_mirrors_pricing_tables() -> None:
     ]
     assert {a["key"]: a["price_cents"] for a in body["addons"]}["highlight_reel"] == 5000
     assert body["deposit_cents"] == 10000
+
+
+def _tax(monkeypatch: pytest.MonkeyPatch, mode: str, percent: str) -> None:
+    from decimal import Decimal
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "tax_mode", mode)
+    monkeypatch.setattr(settings, "tax_rate_percent", Decimal(percent))
+
+
+def test_included_tax_adds_no_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    _tax(monkeypatch, "included", "8.375")  # a rate set but mode "included": prices already contain it
+    result = quote("plus", 20, {"pizza_pack": 1})
+    assert [item.key for item in result.line_items] == ["package", "decorations", "pizza_pack"]
+    assert result.total_cents == 58900
+
+
+def test_line_item_tax_is_added_to_the_total(monkeypatch: pytest.MonkeyPatch) -> None:
+    _tax(monkeypatch, "line_item", "8.375")
+    result = quote("plus", 20, {"pizza_pack": 1})
+    tax = [item for item in result.line_items if item.key == "sales_tax"]
+    assert len(tax) == 1
+    assert tax[0].label == "Sales tax"
+    # 58900 * 8.375% = 4932.875 -> 4933 rounded half up
+    assert tax[0].amount_cents == 4933
+    assert result.total_cents == 58900 + 4933
+    assert result.balance_cents == result.total_cents - result.deposit_cents
+
+
+def test_tax_rounds_half_up_and_never_uses_floats(monkeypatch: pytest.MonkeyPatch) -> None:
+    _tax(monkeypatch, "line_item", "50")  # exactly half of 39900, no rounding at all
+    assert [i.amount_cents for i in quote("standard", 15, {}).line_items if i.key == "sales_tax"] == [19950]
+    _tax(monkeypatch, "line_item", "0.01")  # 39900 * 0.0001 = 3.99 -> 4, rounded half up
+    assert [i.amount_cents for i in quote("standard", 15, {}).line_items if i.key == "sales_tax"] == [4]
+    _tax(monkeypatch, "line_item", "1.25")  # 39900 * 0.0125 = 498.75 -> 499, the half-up case
+    assert [i.amount_cents for i in quote("standard", 15, {}).line_items if i.key == "sales_tax"] == [499]
+
+
+def test_tax_lands_in_the_snapshot_and_the_booking(monkeypatch: pytest.MonkeyPatch, db) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import select
+
+    from app.models import Booking
+    from tests.helpers import checkout, client_from, deliver, make_slot, next_saturday, payment_event, start_hold
+
+    _tax(monkeypatch, "line_item", "8.375")
+    funnel = client_from("203.0.113.190")
+    hold_id = start_hold(funnel, make_slot(db, next_saturday(7)).id).json()["hold_id"]
+    paid = checkout(funnel, hold_id, 1)
+    assert paid.status_code == 200
+    keys = [item["key"] for item in paid.json()["party"]["line_items"]]
+    assert "sales_tax" in keys, "checkout prices with tax, so the snapshot carries it"
+    deliver(payment_event(f"order-{hold_id}"))
+    booking = db.scalars(select(Booking)).one()
+    assert [item["key"] for item in booking.line_items][-1] == "sales_tax"
+    assert booking.total_cents == sum(item["amount_cents"] for item in booking.line_items)

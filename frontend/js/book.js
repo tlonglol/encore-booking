@@ -264,6 +264,25 @@
     return ui.step === "info" && !requesting();
   }
 
+  // The payment step's receipt: line items, then a divider, then Total / Due today / Due at the party.
+  // Tax is never left unsaid: either the server priced a Sales tax line, or the note says it is included.
+  function receipt(q) {
+    const row = (label, amount, cls) =>
+      el("div", { class: "rc-row" + (cls ? " " + cls : "") }, [
+        el("span", { class: "rc-label", text: label }),
+        el("span", { class: "rc-amt", text: amount }),
+      ]);
+    const items = q.line_items.filter((item) => !item.included);
+    const taxed = items.some((item) => item.key === "sales_tax");
+    return el("div", { class: "receipt" }, [
+      ...items.map((item) => row(item.quantity > 1 ? `${item.label} × ${item.quantity}` : item.label, money(item.amount_cents))),
+      row("Total", money(q.total_cents), "rc-total"),
+      taxed ? null : el("div", { class: "rc-note", text: "Includes sales tax" }),
+      row("Due today", money(q.deposit_cents), "rc-due-today"),
+      row("Due at the party", money(q.balance_cents)),
+    ]);
+  }
+
   // The money block, step-aware. Pre-payment: the total leads (the decision number), "$100 today" is the
   // only accent, and the remainder sits on its own muted line. Payment step: "Due now" leads in the accent.
   function renderMoney() {
@@ -286,8 +305,9 @@
 
     const lines = payment
       ? [
-          el("div", { class: "rail-total rail-total-accent" + fade("deposit"), text: `Due now: ${money(q.deposit_cents)}` }),
-          el("div", { class: "rail-calm" + fade("total") + fade("balance"), text: `Total ${money(q.total_cents)} · ${money(q.balance_cents)} due at the party` }),
+          // The phone bar is too small for a ledger, so it carries the lead number; the receipt is the rail.
+          el("div", { class: "rail-lead" + fade("deposit"), text: `Due today: ${money(q.deposit_cents)}` }),
+          receipt(q),
         ]
       : [
           el("div", { class: "rail-total" + fade("total"), text: money(q.total_cents) }),
@@ -297,10 +317,11 @@
           ]),
           el("div", { class: "rail-due" + fade("balance"), text: `${money(q.balance_cents)} due at the party` }),
         ];
-    box.replaceChildren(
-      ...lines,
-      el("button", { type: "button", class: "rail-details", text: "Details", onclick: () => openCompare("summary") })
-    );
+    // replaceChildren stringifies a null child, so the DETAILS button is filtered out, not passed as null.
+    const details = payment
+      ? null
+      : el("button", { type: "button", class: "rail-details", text: "Details", onclick: () => openCompare("summary") });
+    box.replaceChildren(...[...lines, details].filter(Boolean));
   }
 
   function renderAdvance() {
@@ -936,36 +957,43 @@
         if (event.target.value) applyBirthday(event.target.value);
       },
     });
-    // A real button for keyboard users; its click bubbles to the control, which opens the calendar.
-    const calendar = el("button", { type: "button", class: "seg-cal", "aria-label": "Pick from calendar" });
+    // The one thing that opens the calendar. Everywhere else in the control is for typing.
+    const calendar = el("button", {
+      type: "button",
+      class: "seg-cal",
+      "aria-label": "Pick from calendar",
+      onclick: () => {
+        boxes.forEach((box) => box.blur());
+        if (native.showPicker) {
+          try {
+            native.showPicker();
+            return;
+          } catch (error) {
+            /* some browsers refuse outside a trusted gesture; fall through to focusing it */
+          }
+        }
+        native.focus();
+      },
+    });
     calendar.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
 
     const wrap = el("div", { class: "date-seg", role: "group", "aria-label": "Birthday" }, [
+      el("div", { class: "seg-fields" }, [
+        boxes[0],
+        el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+        boxes[1],
+        el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+        boxes[2],
+      ]),
       calendar,
-      boxes[0],
-      el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
-      boxes[1],
-      el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
-      boxes[2],
       native,
     ]);
 
-    // A click on a box is for typing. Anything else on the control (the icon, the separators, the padding)
-    // opens the calendar.
-    wrap.addEventListener("click", (event) => {
-      if (event.target === native || event.target.closest(".seg")) return;
-      boxes.forEach((box) => box.blur());
-      if (native.showPicker) {
-        try {
-          native.showPicker();
-          return;
-        } catch (error) {
-          /* some browsers refuse outside a trusted gesture; fall through to focusing it */
-        }
-      }
-      native.focus();
+    // Clicking the typing area puts the caret in the nearest box rather than doing nothing.
+    wrap.querySelector(".seg-fields").addEventListener("click", (event) => {
+      if (!event.target.closest(".seg")) boxes[0].focus();
     });
     return wrap;
   }
@@ -1315,14 +1343,7 @@
         field("kid_age", "Kid's age", { inputmode: "numeric", pattern: "[0-9]*", maxlength: "2", placeholder: "e.g. 9", value: saved.kidAge }),
         requesting() ? timeField() : null,
       ]),
-      el("div", { class: "pay-summary" }, [
-        el("div", { class: "roll" }, [
-          el("div", { class: "total", id: "summary-total", text: "—" }),
-          el("button", { type: "button", class: "quote-toggle", id: "summary-toggle", text: "Details", onclick: toggleSummary }),
-        ]),
-        el("ul", { class: "quote-lines", id: "summary-lines", hidden: true }),
-        el("p", { class: "deposit-math", id: "deposit-math" }),
-      ]),
+      el("div", { class: "pay-summary", id: "pay-summary" }),
       requesting() ? null : el("p", { class: "risk-line", text: C.REFUND_PROMISE }),
       el("div", { id: "pay-error", role: "alert" })
     );
@@ -1363,30 +1384,16 @@
     ]);
   }
 
-  function toggleSummary() {
-    const lines = $("summary-lines");
-    lines.hidden = !lines.hidden;
-    $("summary-toggle").textContent = lines.hidden ? "Details" : "Hide";
-  }
-
+  // The same receipt as the rail. CSS shows this one only where the rail is collapsed (phones), so there
+  // is exactly one money block per viewport.
   function renderSummary() {
-    const total = $("summary-total");
-    if (!total) return;
+    const box = $("pay-summary");
+    if (!box) return;
     if (!ui.quote) {
-      total.textContent = "…";
+      box.replaceChildren(el("div", { class: "rc-row", text: "…" }));
       return;
     }
-    // A weekday request takes no payment, so only a real checkout says "Due now".
-    total.textContent = requesting() ? money(ui.quote.total_cents) : `Due now: ${money(ui.quote.deposit_cents)}`;
-    $("summary-lines").replaceChildren(
-      ...ui.quote.line_items.map((item) =>
-        el("li", {}, [
-          el("span", { text: item.quantity > 1 ? `${item.label} × ${item.quantity}` : item.label }),
-          item.included ? el("span", { class: "inc", text: "Included" }) : el("span", { text: money(item.amount_cents) }),
-        ])
-      )
-    );
-    $("deposit-math").textContent = `Total ${money(ui.quote.total_cents)} · ${money(ui.quote.balance_cents)} due at the party`;
+    box.replaceChildren(receipt(ui.quote));
   }
 
   function readForm() {
