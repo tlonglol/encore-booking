@@ -1646,19 +1646,29 @@
     paintTimer();
     const left = remainingSeconds();
     if (left !== null && left <= 0 && !ui.busy && !ui.holdModal) showHoldModal("expired");
+    else if (left !== null && left <= 0) renderHoldHead();
   }
 
-  // The persistent header line: one element in the shell, so the timer never unmounts on step navigation.
+  // A hold that has run out, or that the modal is already explaining, is not a status worth pinning.
+  function holdLive() {
+    const left = remainingSeconds();
+    return holding() && !ui.holdModal && (left === null || left > 0);
+  }
+
+  // The status strip: one element in the shell, so the timer never unmounts on step navigation.
   function renderHoldHead() {
     const head = $("hold-head");
-    const visible = Boolean(draft.date) && (holding() || requesting()) && !ui.done;
+    const visible = Boolean(draft.date) && !ui.done && (holdLive() || requesting());
     head.hidden = !visible;
+    // The rail sticks below the banner, and below the strip too when there is one.
+    document.body.classList.toggle("has-strip", visible);
     if (!visible) {
       paintTimer();
       return;
     }
     $("hold-what").textContent = requesting() ? "Requesting" : "Holding";
     $("hold-when").textContent = draft.timeLabel ? `${draft.dayLabel} · ${draft.timeLabel}` : draft.dayLabel;
+    $("hold-when-short").textContent = shortDate(draft.date);
     // The way out sits next to the clock on every step but the one it leads to.
     $("hold-change").hidden = !holding() || ui.step === "date";
     paintTimer();
@@ -1693,7 +1703,7 @@
     const expired = status === "expired";
     ui.holdModal = status;
     stopTimer();
-    paintTimer();
+    renderHoldHead();
     $("hold-modal-title").textContent = expired ? "Still there?" : "That date is no longer held";
     $("hold-modal-text").textContent = expired
       ? `Your hold on ${label} expired. Nothing was charged. Re-hold it to get another 15 minutes; your package and details are saved.`
