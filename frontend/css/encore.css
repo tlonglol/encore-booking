@@ -1150,33 +1150,33 @@ img { max-width: 100%; }
 
 /* Selected / held date: a lit-up "loadout" card. The fill and glow come from the active plan colour,
    and the badge is a bright tint of it with light text so it reads on the dark card. */
-.funnel { --tier-bright: color-mix(in srgb, var(--tier-line-strong) 45%, #fff); }
+.funnel { --tier-bright: color-mix(in srgb, var(--tier-line-strong) 55%, #fff); }
 .wk-card.yours {
   border: 2px solid var(--tier-line-strong);
   padding: 13px; /* the 2px border replaces 1px, so the content does not shift */
   background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tier-line-strong) 34%, transparent), transparent 62%),
-    linear-gradient(160deg, color-mix(in srgb, var(--tier-line-strong) 16%, var(--card)), var(--card) 75%);
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tier-line-strong) 27%, transparent), transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--tier-line-strong) 13%, var(--card)), var(--card) 75%);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--tier-line-strong) 35%, transparent),
-    0 0 22px color-mix(in srgb, var(--tier-line-strong) 38%, transparent),
-    inset 0 0 26px color-mix(in srgb, var(--tier-line-strong) 16%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--tier-line-strong) 30%, transparent),
+    0 0 18px color-mix(in srgb, var(--tier-line-strong) 30%, transparent),
+    inset 0 0 22px color-mix(in srgb, var(--tier-line-strong) 12%, transparent);
   animation: lit 2.6s ease-in-out infinite;
 }
 @keyframes lit {
   50% {
     box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--tier-line-strong) 45%, transparent),
-      0 0 30px color-mix(in srgb, var(--tier-line-strong) 52%, transparent),
-      inset 0 0 32px color-mix(in srgb, var(--tier-line-strong) 22%, transparent);
+      0 0 0 1px color-mix(in srgb, var(--tier-line-strong) 38%, transparent),
+      0 0 24px color-mix(in srgb, var(--tier-line-strong) 40%, transparent),
+      inset 0 0 26px color-mix(in srgb, var(--tier-line-strong) 16%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) { .wk-card.yours { animation: none; } }
-.wk-card.yours .wk-date { color: #fff; }
+.wk-card.yours .wk-date { color: #f2f2f6; }
 .wk-card.yours .wk-state span {
   background: color-mix(in srgb, var(--tier-line-strong) 30%, #05070d);
   border-color: var(--tier-line-strong);
   color: var(--tier-bright);
-  text-shadow: 0 0 10px color-mix(in srgb, var(--tier-line-strong) 70%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--tier-line-strong) 45%, transparent);
 }
 .wk-card.yours .wk-price { color: var(--tier-bright); }
