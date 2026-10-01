@@ -1,5 +1,7 @@
 (function () {
   const { api, detailText, money, el, store } = window.Encore;
+  window.EncoreShell.mountNav({ ctaHref: "index.html#book" });
+  window.EncoreShell.mountFooter();
   const view = document.getElementById("view");
   const params = new URLSearchParams(window.location.search);
   const FAST_POLL_MS = 2000;
@@ -54,8 +56,10 @@
   }
 
   function renderBar(party) {
-    document.getElementById("confirm-bar").hidden = false;
-    document.body.classList.add("has-quote-bar");
+    const bar = document.getElementById("confirm-bar");
+    bar.hidden = false;
+    bar.classList.add("show");
+    document.body.classList.add("bar-on");
     document.getElementById("quote-total").textContent = money(party.total_cents);
     document.getElementById("quote-split").replaceChildren(
       el("b", { text: `${money(party.deposit_cents)} paid` }),

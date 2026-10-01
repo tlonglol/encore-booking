@@ -4,68 +4,149 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#050505">
-  <title>Book a Party · Encore Esports</title>
+  <title>Gaming Birthday Parties · Encore Esports · New Rochelle NY</title>
+  <meta name="description" content="Private full-venue gaming birthday parties at Encore Esports, New Rochelle. Pick your date, build your party, and lock it in with a $100 deposit.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050505'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%231a74cc' font-family='Arial' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/encore.css">
 </head>
-<body class="has-quote-bar">
-  <nav class="nav">
-    <a class="nav-logo" href="https://encoregaming.us">ENCORE <span>ESPORTS</span></a>
-    <a class="nav-cta" href="tel:+16462038087">(646) 203-8087</a>
-  </nav>
+<body>
+  <nav class="nav" id="nav"></nav>
 
   <main class="wrap">
-    <header class="hero">
-      <p class="hero-eyebrow">538 Main St · New Rochelle, NY</p>
-      <h1 class="hero-title"><span class="line1">Book their</span><span class="line2">birthday</span></h1>
-      <p class="hero-price">Private venue parties from $399</p>
-      <p class="hero-sub">Pick your date, build your party, and lock it in with a $100 deposit. The rest is due the day of the party.</p>
-      <div class="badges">
-        <span class="badge badge-blue">Sat &amp; Sun mornings</span>
-        <span class="badge badge-white">Private venue buyout</span>
-        <span class="badge badge-blue">Dedicated host</span>
-        <span class="badge badge-white">Ages 6+</span>
-      </div>
-    </header>
+    <!-- 2. Hero -->
+    <header class="hero" id="hero"></header>
 
-    <ol class="steps" id="steps" aria-label="Booking steps"></ol>
+    <!-- 3. Stats strip -->
+    <div class="info-strip" id="info-strip"></div>
 
-    <section aria-labelledby="date-label">
-      <div class="section-label" id="date-label">Pick a date</div>
-      <div class="tier-strip" id="tier-strip" aria-label="Package prices"></div>
-      <div id="resume-notice"></div>
-      <div id="slot-notice" class="slot-notice" aria-live="polite"></div>
-      <div id="slots"><p class="muted">Loading dates…</p></div>
-      <div class="weekday-ask">
-        <button type="button" class="btn btn-ghost btn-block" id="weekday-toggle" aria-expanded="false" aria-controls="weekday-form">Want a weekday? Tell us your date</button>
-        <form id="weekday-form" class="weekday-form" hidden novalidate>
-          <div class="field">
-            <label for="weekday-date">Your date</label>
-            <input id="weekday-date" type="date" required>
-          </div>
-          <button type="submit" class="btn btn-primary">Continue</button>
-          <p class="weekday-error" id="weekday-error" role="alert"></p>
-        </form>
-        <button type="button" class="btn btn-ghost btn-block" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-form">Don't see your date? Get notified</button>
-        <form id="waitlist-form" class="waitlist-form" hidden novalidate>
-          <div class="field">
-            <label for="waitlist-email">Your email</label>
-            <input id="waitlist-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
-          </div>
-          <button type="submit" class="btn btn-primary">Notify me</button>
-          <p class="waitlist-note" id="waitlist-note" role="status"></p>
-        </form>
+    <!-- 4. Reviews banner -->
+    <a class="reviews-badge" id="reviews" target="_blank" rel="noopener"></a>
+
+    <!-- 5. Packages -->
+    <div class="section-label">Choose Your Package</div>
+    <div class="pkg-grid" id="pkg-grid"></div>
+
+    <!-- 6. Venue buyout -->
+    <div class="buyout" id="buyout"></div>
+
+    <!-- 7. Add-ons, display only -->
+    <div class="section-label">Premium Add-Ons</div>
+    <div class="addon-grid" id="addon-grid"></div>
+
+    <!-- 8. FAQ -->
+    <div class="section-label">Parent FAQ</div>
+    <div class="faq-grid" id="faq-grid"></div>
+
+    <!-- 9. Testimonials -->
+    <div class="section-label">What Parents Say</div>
+    <div class="quotes-grid" id="quotes-grid"></div>
+    <a class="reviews-all" id="reviews-all" target="_blank" rel="noopener"></a>
+
+    <!-- 10. The booking engine -->
+    <div class="section-label">Book Your Party</div>
+    <section class="book-panel" id="book" aria-labelledby="book-title">
+      <h2 class="book-title" id="book-title">Book Your Party</h2>
+      <p class="book-sub" id="book-sub">Weekend morning slots fill fast. Pick your date, build your party, and lock it in with a $100 deposit &mdash; the balance is due the day of the party.</p>
+
+      <ol class="steps" id="steps" aria-label="Booking steps"></ol>
+      <div class="hold-line" id="hold-line" hidden></div>
+      <div id="engine-notice" aria-live="polite"></div>
+
+      <!-- Step 1: date -->
+      <div class="step-panel" id="step-date">
+        <div id="resume-notice"></div>
+        <div id="slots"><p class="muted">Loading dates&hellip;</p></div>
+        <div class="asks">
+          <button type="button" class="btn btn-ghost btn-block" id="weekday-toggle" aria-expanded="false" aria-controls="weekday-form">Want a weekday? Tell us your date</button>
+          <form id="weekday-form" class="ask-form" hidden novalidate>
+            <div class="field">
+              <label for="weekday-date">Your date</label>
+              <input id="weekday-date" type="date" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Continue</button>
+            <p class="ask-error" id="weekday-error" role="alert"></p>
+          </form>
+          <button type="button" class="btn btn-ghost btn-block" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-form">Don't see your date? Get notified</button>
+          <form id="waitlist-form" class="ask-form" hidden novalidate>
+            <div class="field">
+              <label for="waitlist-email">Your email</label>
+              <input id="waitlist-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Notify me</button>
+            <p class="ask-note" id="waitlist-note" role="status"></p>
+          </form>
+        </div>
       </div>
+
+      <!-- Step 2: package -->
+      <div class="step-panel" id="step-package" hidden>
+        <div class="pick-grid" id="pick-grid"></div>
+      </div>
+
+      <!-- Step 3: extras -->
+      <div class="step-panel" id="step-addons" hidden>
+        <p class="muted small" style="margin-bottom:1rem">All optional. Your total updates in the bar below as you pick &mdash; nothing here moves you forward.</p>
+        <div class="opt-grid" id="opt-grid"></div>
+      </div>
+
+      <!-- Step 4: confirm -->
+      <div class="step-panel" id="step-confirm" hidden>
+        <form id="pay-form" class="form-grid" novalidate>
+          <div class="field full"><label for="email">Parent email</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required></div>
+          <div class="field"><label for="parent_name">Parent name</label><input id="parent_name" name="parent_name" autocomplete="name" placeholder="Your name" required maxlength="120"></div>
+          <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000" required></div>
+          <div class="field"><label for="kid_name">Kid's name</label><input id="kid_name" name="kid_name" placeholder="The birthday kid" required maxlength="60"></div>
+          <div class="field"><label for="kid_age">Kid's age</label><input id="kid_age" name="kid_age" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 9" required maxlength="2"></div>
+          <div class="field"><label for="kids">Estimated headcount</label><input id="kids" name="kids" type="text" inputmode="numeric" pattern="[0-9]*" required maxlength="2"></div>
+          <div class="field" id="time-field" hidden><label for="preferred_time">Preferred start time</label>
+            <select id="preferred_time" name="preferred_time">
+              <option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option>
+              <option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option>
+              <option value="13:00">1:00 PM</option><option value="14:00">2:00 PM</option>
+              <option value="15:00">3:00 PM</option><option value="16:00" selected>4:00 PM</option>
+              <option value="17:00">5:00 PM</option><option value="18:00">6:00 PM</option>
+              <option value="19:00">7:00 PM</option><option value="20:00">8:00 PM</option>
+            </select>
+          </div>
+        </form>
+
+        <div class="pay-summary">
+          <div class="roll">
+            <div class="total" id="summary-total">&mdash;</div>
+            <button class="quote-toggle" id="summary-toggle" type="button" aria-expanded="false" aria-controls="summary-lines">Details</button>
+          </div>
+          <ul class="quote-lines" id="summary-lines" hidden></ul>
+          <p class="deposit-math" id="deposit-math"></p>
+        </div>
+
+        <p class="risk-line" id="risk-line">Free reschedule up to 7 days before your party. Deposit fully refundable for 14 days.</p>
+        <div id="pay-error" role="alert"></div>
+        <button class="btn btn-primary btn-block" id="pay-button" type="button">Pay $100 &amp; lock it in</button>
+        <p class="fine" id="pay-fine">Secure checkout by Square. You'll come right back here for your confirmation.</p>
+      </div>
+
+      <!-- Request sent -->
+      <div class="step-panel hold-panel" id="step-done" hidden aria-live="polite">
+        <p class="hold-caption">Request sent</p>
+        <h3 class="book-title">We'll text you</h3>
+        <p class="summary-line" id="request-summary"></p>
+        <p class="book-sub">No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087.</p>
+      </div>
+
+      <!-- Hold released -->
+      <div class="step-panel" id="step-dead" hidden aria-live="polite"></div>
     </section>
   </main>
 
-  <div class="quote-bar">
+  <footer class="page-footer" id="footer"></footer>
+
+  <div class="quote-bar" id="quote-bar">
     <div class="quote-inner">
       <div class="quote-main">
-        <div class="quote-total" id="quote-total">—</div>
+        <div class="quote-total" id="quote-total">&mdash;</div>
         <div class="quote-split" id="quote-split"></div>
         <button class="quote-toggle" id="quote-toggle" type="button" aria-expanded="false" aria-controls="quote-lines" hidden>Details</button>
       </div>
@@ -76,7 +157,9 @@
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
-  <script src="js/funnel.js"></script>
-  <script src="js/grid.js"></script>
+  <script src="js/content.js"></script>
+  <script src="js/shell.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/site.js"></script>
 </body>
 </html>
