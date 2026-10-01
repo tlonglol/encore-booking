@@ -1,14 +1,14 @@
 // The booking funnel: one shell, four steps that swap in the left block.
 // Two doors in (package-led and date-led), one merge point at Extras.
 (function () {
-  const { api, detailText, money, clock, el, store, recall, bindCount } = window.Encore;
+  const { api, detailText, money, el, store, recall, bindCount } = window.Encore;
   const C = window.EncoreContent;
   const KEY = "encore.draft";
   const STEPS = ["date", "plan", "addons", "info"];
   // Display copy only, mirroring "feeds about 10 kids" on the Pizza Pack card; never used for pricing.
   const KIDS_PER_PIZZA_PACK = 10;
   const STATUS_TEXT = { open: "Open", held: "On hold", booked: "Booked", blocked: "Unavailable", past: "Unavailable", request: "By request" };
-  const DRAFT_KEYS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "package", "addons", "kids", "contact", "seenAddons", "seenInfo", "birthday"];
+  const DRAFT_KEYS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "package", "addons", "kids", "contact", "seenAddons", "seenInfo", "birthday", "step"];
   const DAY_MS = 86400000;
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -27,6 +27,7 @@
     seenAddons: false,
     seenInfo: false,
     birthday: null,
+    step: null,
   };
 
   const ui = {
@@ -191,6 +192,7 @@
 
   function render(step) {
     ui.step = step;
+    draft.step = step;
     ui.popover = null;
     ui.policyOpen = false;
     save();
@@ -1601,12 +1603,10 @@
   // The hold row's expiry on the server is the only clock that matters. The client keeps one number, the
   // moment (on its own monotonic clock) the server said the hold would end, and only ever sets it from a
   // server response: at hold creation, on boot, on return to the tab, on a Re-hold. It is never restarted locally.
-  const LOW_SECONDS = 120;
-
   function setDeadline(secondsRemaining) {
     ui.deadline = performance.now() + secondsRemaining * 1000;
     startTimer();
-    paintTimer();
+    renderHoldHead();
   }
 
   function startTimer() {
@@ -1623,55 +1623,32 @@
     return ui.deadline === null ? null : (ui.deadline - performance.now()) / 1000;
   }
 
-  // Live mm:ss from the first second, muted, in tabular figures. Under two minutes it turns the accent
-  // colour, which is its only state change. The seconds are the point: a real countdown shown plainly reads
-  // as logistics, where a rounded "about 14 min" reads as a number someone made up.
-  function paintTimer() {
-    const node = $("hold-timer");
-    if (!node) return;
-    const left = remainingSeconds();
-    if (!holding() || left === null) {
-      node.textContent = "";
-      node.classList.remove("low");
-      return;
-    }
-    const low = left < LOW_SECONDS;
-    const text = left <= 0 ? "expired" : clock(Math.ceil(left));
-    if (node.textContent !== text) node.textContent = text;
-    node.setAttribute("aria-label", left <= 0 ? "Hold expired" : `${text} left on your hold`);
-    node.classList.toggle("low", low);
-  }
-
   function tick() {
-    paintTimer();
     const left = remainingSeconds();
-    if (left !== null && left <= 0 && !ui.busy && !ui.holdModal) showHoldModal("expired");
-    else if (left !== null && left <= 0) renderHoldHead();
+    if (left !== null && left <= 0 && !ui.busy && !ui.holdModal) return showHoldModal("expired");
+    renderHoldHead();
   }
 
-  // A hold that has run out, or that the modal is already explaining, is not a status worth pinning.
+  // A hold that has run out, or that the modal is already explaining, is not a status worth showing.
   function holdLive() {
     const left = remainingSeconds();
     return holding() && !ui.holdModal && (left === null || left > 0);
   }
 
-  // The status strip: one element in the shell, so the timer never unmounts on step navigation.
+  // The pill is a shell element shared with the rest of the site: the funnel owns the clock and hands it
+  // the current state, so the timer never unmounts or resets on step navigation.
   function renderHoldHead() {
-    const head = $("hold-head");
-    const visible = Boolean(draft.date) && !ui.done && (holdLive() || requesting());
-    head.hidden = !visible;
-    // The rail sticks below the banner, and below the strip too when there is one.
-    document.body.classList.toggle("has-strip", visible);
-    if (!visible) {
-      paintTimer();
-      return;
-    }
-    $("hold-what").textContent = requesting() ? "Requesting" : "Holding";
-    $("hold-when").textContent = draft.timeLabel ? `${draft.dayLabel} · ${draft.timeLabel}` : draft.dayLabel;
-    $("hold-when-short").textContent = shortDate(draft.date);
-    // The way out sits next to the clock on every step but the one it leads to.
-    $("hold-change").hidden = !holding() || ui.step === "date";
-    paintTimer();
+    if (!draft.date || ui.done || !holdLive()) return window.EncoreHoldPill.hide();
+    window.EncoreHoldPill.render({
+      seconds: remainingSeconds(),
+      dayLabel: draft.dayLabel,
+      timeLabel: draft.timeLabel,
+      shortLabel: shortDate(draft.date),
+      // The way out sits beside the clock on every step but the one it leads to.
+      actionText: ui.step === "date" ? null : "Change date",
+      actionShort: "Change",
+      onAction: () => go("date"),
+    });
   }
 
   // Ask the server how long is left. Used on boot, when the tab comes back and when a cached page is restored.
@@ -1933,7 +1910,6 @@
     });
     // The modal has no other way out than its two buttons.
     $("hold-modal").addEventListener("cancel", (event) => event.preventDefault());
-    $("hold-change").addEventListener("click", () => go("date"));
     window.addEventListener("popstate", (event) => {
       const step = (event.state && event.state.step) || pathStep();
       go(step, "pop");

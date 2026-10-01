@@ -833,11 +833,14 @@ img { max-width: 100%; }
 .book-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 1.5rem; }
 
 /* ── Funnel shell ── */
-.funnel-body { padding-bottom: 0; --strip-h: 0px; }
-.funnel-body.has-strip { --strip-h: 44px; }
-/* Banner and hold strip pin as one unit, so the strip needs no hard-coded banner height. */
-.shell-top { position: sticky; top: 0; z-index: 100; }
+.funnel-body { padding-bottom: 0; }
+/* The pill floats over the page; on desktop it shares a corner with the rail, which moves down to clear it. */
+:root { --pill-clear: 0px; }
+body.has-pill { --pill-clear: 52px; }
 .banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -1104,10 +1107,11 @@ img { max-width: 100%; }
     align-items: start;
     padding: 2rem 2rem 4rem;
   }
-  .banner, .hold-strip { padding-left: 2rem; padding-right: 2rem; }
+  .banner { padding-left: 2rem; padding-right: 2rem; }
   .rail {
     position: sticky;
-    top: calc(86px + var(--strip-h));
+    top: calc(86px + var(--pill-clear));
+    margin-top: var(--pill-clear);
     left: auto;
     right: auto;
     bottom: auto;
@@ -1547,19 +1551,32 @@ img { max-width: 100%; }
 }
 
 /* ── Hold header + timer: one persistent line in the shell, above whichever step is showing ── */
-.hold-strip {
+/* ── Hold pill: floats over whichever header the page has, and restyles neither ── */
+.hold-pill {
+  position: fixed;
+  top: 78px;
+  right: 1rem;
+  z-index: 99;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 44px;
-  padding: 0 1.25rem;
-  background: rgba(13, 13, 13, 0.97);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-blue);
+  border-radius: 999px;
+  background: var(--card2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
 }
-.hold-unit { display: inline-flex; align-items: baseline; gap: 10px; }
-.hold-what, .hold-when, .hold-when-short {
+.pill-icon { width: 14px; height: 14px; flex: none; color: var(--gray); }
+.pill-clock {
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: var(--gray-light);
+}
+.pill-clock.low { color: var(--tier); font-weight: 600; }
+/* Before a package is picked --tier is the muted grey, which would leave the low state invisible. */
+[data-tier="none"] .pill-clock.low, :root:not([data-tier]) .pill-clock.low { color: var(--blue-light); }
+.pill-when, .pill-when-short {
   font-family: var(--condensed);
   font-size: 12px;
   font-weight: 700;
@@ -1567,24 +1584,17 @@ img { max-width: 100%; }
   text-transform: uppercase;
   color: var(--blue-light);
 }
-.hold-when-short { display: none; }
-.hold-timer {
-  font-family: var(--body);
-  font-variant-numeric: tabular-nums;
-  font-size: 15px;
+.pill-when-short, .pill-action-short { display: none; }
+.pill-when::before, .pill-action::before {
+  content: "\00b7";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--gray);
   font-weight: 400;
   letter-spacing: 0;
-  text-transform: none;
-  color: var(--gray-light);
+  text-decoration: none;
 }
-.hold-timer.low { color: var(--tier); font-weight: 600; }
-/* Before a package is picked --tier is the muted grey, which would leave the low state invisible. */
-[data-tier="none"] .hold-timer.low { color: var(--blue-light); }
-.hold-timer:empty { display: none; }
-.hold-change::before { content: "\00b7"; margin-right: 10px; color: var(--gray); font-weight: 400; }
-/* inline-block keeps the button's underline from running under its own separator dot */
-.hold-change::before { display: inline-block; text-decoration: none; }
-.hold-change {
+.pill-action {
   font-family: var(--condensed);
   font-size: 12px;
   font-weight: 600;
@@ -1600,15 +1610,18 @@ img { max-width: 100%; }
   text-underline-offset: 3px;
   text-decoration-color: var(--gray);
 }
-.hold-change:hover { color: var(--blue-light); text-decoration-color: var(--blue-light); }
+.pill-action:hover { color: var(--blue-light); text-decoration-color: var(--blue-light); }
+.hold-pill[hidden] { display: none; }
 
-/* Phone: one line still, compacted to "OCT 10 · 9:58 · CHANGE". The rail is collapsed here, so this is
-   the only place the hold shows. */
+/* Phone: docked under the header, full width less its margins, and compacted. */
 @media (max-width: 560px) {
-  .hold-strip { justify-content: flex-start; gap: 10px; padding: 0 1rem; }
-  .hold-what, .hold-when, .hold-change-tail { display: none; }
-  .hold-when-short { display: inline; }
-  .hold-timer::before { content: "\00b7"; margin-right: 10px; color: var(--gray); }
+  .hold-pill { left: 0.75rem; right: 0.75rem; justify-content: center; border-radius: 10px; padding: 8px 12px; }
+  /* Docked across the top here, so the page below starts under it rather than behind it. */
+  body.has-pill .funnel, body.has-pill .wrap { padding-top: calc(1.5rem + var(--pill-clear)); }
+  .pill-when { display: none; }
+  .pill-when-short { display: inline; }
+  .pill-action-long { display: none; }
+  .pill-action-short { display: inline; }
 }
 
 /* ── "Still there?" modal: two buttons and nothing else ── */
