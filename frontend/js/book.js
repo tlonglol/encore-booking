@@ -952,16 +952,10 @@
       native,
     ]);
 
-    // The whole control opens the calendar. The exception is a click on a box while the control already has
-    // focus (the parent is typing), which just places the caret. Focus is dropped when the calendar opens so
-    // the next click opens it again instead of being treated as typing.
-    let typing = false;
-    wrap.addEventListener("mousedown", () => {
-      typing = boxes.includes(document.activeElement);
-    });
+    // A click on a box is for typing. Anything else on the control (the icon, the separators, the padding)
+    // opens the calendar.
     wrap.addEventListener("click", (event) => {
-      if (event.target === native) return;
-      if (typing && event.target.closest(".seg")) return;
+      if (event.target === native || event.target.closest(".seg")) return;
       boxes.forEach((box) => box.blur());
       if (native.showPicker) {
         try {
