@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # How many deposits may refund themselves in one day before the rest wait for the owner to approve.
     # An automatic refund moves real money with nobody in the loop, so there is a number.
     refund_daily_cap: int = 3
+    # The demo reset deletes bookings, so it stays off unless someone deliberately turns it on.
+    demo_reset_enabled: bool = False
     admin_password: str = ""
     session_secret: str = ""
     trust_proxy_headers: bool = False

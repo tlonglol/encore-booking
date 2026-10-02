@@ -157,11 +157,33 @@
     );
   }
 
+  function resetCard() {
+    return el("article", { class: "card" }, [
+      el("div", { class: "card-head" }, [
+        el("div", { class: "card-title", text: "Reset demo data" }),
+        el("span", { class: "pill warn", text: "Deletes bookings" }),
+      ]),
+      el("div", {
+        class: "card-meta",
+        text: "Clears every booking, hold, refund and message, then lays the grid back out with sample parties, one date on hold and the rest open. Use it between demos.",
+      }),
+      el("div", { class: "card-actions" }, [
+        confirmButton("Reset demo data", "Tap again to wipe and reseed", async () => {
+          const result = await guarded("/api/admin/demo/reset", { method: "POST" });
+          if (result.status !== 200) return problem(result.data);
+          show("bookings");
+          counts();
+        }),
+      ]),
+    ]);
+  }
+
   async function dates() {
     const { status, data } = await api("/api/availability");
     if (status !== 200) return problem(data);
     const slotDays = data.days.filter((s) => s.slot_id !== null);
     panel.replaceChildren(
+      resetCard(),
       ...slotDays.map((s) => {
         const canBlock = s.status === "open" || s.status === "past" || s.status === "request";
         return el("article", { class: "card" }, [

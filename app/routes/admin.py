@@ -11,9 +11,10 @@ from app.services.admin_auth import COOKIE_NAME, SESSION_SECONDS, issue_token, p
 from app.notifications import addons_summary
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
+from app.services import demo
 from app.services.refunds import REPEAT_CANCELLER_THRESHOLD, send_refund
 from app.services.slots import SlotConflict, set_blocked
-from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time
+from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time, venue_today
 
 router = APIRouter(prefix="/api/admin")
 
@@ -255,6 +256,22 @@ def repeat_cancellers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         }
         for row in admin_service.list_repeat_cancellers(db, REPEAT_CANCELLER_THRESHOLD)
     ]
+
+
+@router.post("/demo/reset", dependencies=[Depends(require_admin)])
+def demo_reset(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Back to a known demo state. Admin-only like everything here, and refused unless DEMO_RESET_ENABLED
+    is on and the credentials are not production, because this deletes bookings."""
+    try:
+        state = demo.reset(db, get_settings(), venue_today(datetime.now(UTC)))
+    except demo.ResetNotAllowed as error:
+        raise HTTPException(status_code=403, detail=error.message) from error
+    return {
+        "bookings": state.bookings,
+        "booked": [day.isoformat() for day in state.booked],
+        "held": [day.isoformat() for day in state.held],
+        "open": len(state.open),
+    }
 
 
 @router.get("/flags", dependencies=[Depends(require_admin)])
