@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
@@ -12,10 +12,10 @@ from app.notifications import addons_summary, notify_owner, owner_manual_booked_
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
 from app.services import demo
-from app.services.holds import SlotNotFound, SlotUnavailable, check_birthday
+from app.services import slots
+from app.services.holds import SlotUnavailable, check_birthday
 from app.services.refunds import REPEAT_CANCELLER_THRESHOLD, send_refund
-from app.services.slots import SlotConflict, set_blocked
-from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time, venue_today
+from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time, is_weekend, venue_today
 
 router = APIRouter(prefix="/api/admin")
 
@@ -74,12 +74,32 @@ def session_check() -> dict[str, bool]:
 
 def _set_blocked(slot_id: int, blocked: bool, db: Session) -> dict[str, object]:
     try:
-        slot = set_blocked(db, slot_id, blocked)
-    except SlotConflict as error:
+        slot = slots.set_blocked(db, slot_id, blocked)
+    except slots.SlotConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     if slot is None:
         raise HTTPException(status_code=404, detail="Slot not found")
     return {"id": slot.id, "blocked": slot.blocked_at is not None}
+
+
+@router.get("/slots/status", dependencies=[Depends(require_admin)])
+def slot_status(day: date = Query(alias="date"), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """What one date is, so the owner's date field can say so before the submit rather than after.
+
+    A read: a date with no slot row is reported as `none` and stays that way. Only an actual booking
+    creates one, which is what keeps a mistyped date from littering the table with slots.
+    """
+    state = slots.date_status(db, day, venue_today(datetime.now(UTC)))
+    return {
+        "date": state.local_date.isoformat(),
+        "day_label": format_date(state.local_date),
+        "time_label": format_time(state.starts_at),
+        "status": state.status,
+        "bookable": state.status in (slots.OPEN, slots.NONE),
+        "weekday": not is_weekend(state.local_date),
+        "weekday_label": None if is_weekend(state.local_date) else f"{state.local_date:%A}",
+        "confirmation_code": state.confirmation_code,
+    }
 
 
 @router.post("/slots/{slot_id}/block", dependencies=[Depends(require_admin)])
@@ -225,9 +245,14 @@ def cancel(booking_id: int, body: CancelIn, db: Session = Depends(get_db)) -> di
 
 
 class ManualBookingIn(BaseModel):
-    """No price field on purpose: the server quotes the party from the package and the headcount."""
+    """No price field on purpose: the server quotes the party from the package and the headcount.
 
-    slot_id: int
+    A date rather than a slot id: the owner books a date, and whether that date has a slot row yet is the
+    server's business, not the form's. It is `party_date` here and `date` on the wire, because a field
+    actually named `date` would shadow the type every field under it is annotated with.
+    """
+
+    party_date: date = Field(alias="date")
     package: str
     kids: int
     addons: dict[str, int] = Field(default_factory=dict)
@@ -254,11 +279,12 @@ def create_booking(body: ManualBookingIn, db: Session = Depends(get_db)) -> dict
     this form loading and the owner submitting it is a 409, never a second party on one Saturday.
     """
     settings = get_settings()
+    today = venue_today(datetime.now(UTC))
     try:
         booking = admin_service.create_manual_booking(
             db,
             admin_service.ManualBookingInput(
-                slot_id=body.slot_id,
+                local_date=body.party_date,
                 package=body.package,
                 kids=body.kids,
                 addons=body.addons,
@@ -268,17 +294,16 @@ def create_booking(body: ManualBookingIn, db: Session = Depends(get_db)) -> dict
                 email=str(body.email),
                 kid_name=body.kid_name,
                 kid_age=body.kid_age,
-                birthday=check_birthday(body.birthday, venue_today(datetime.now(UTC))),
+                birthday=check_birthday(body.birthday, today),
                 notes=body.notes,
                 deposit_collected=body.deposit_collected,
             ),
+            today,
         )
     except ValueError as error:
-        # PricingError, normalize_phone and check_birthday are all ValueErrors carrying the sentence the
-        # owner should read.
+        # PricingError, normalize_phone, check_birthday and the past-date rule are all ValueErrors carrying
+        # the sentence the owner should read.
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except SlotNotFound as error:
-        raise HTTPException(status_code=404, detail="That date does not exist") from error
     except SlotUnavailable as error:
         raise HTTPException(
             status_code=409,

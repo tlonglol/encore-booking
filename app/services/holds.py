@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Booking, Hold, Slot
 from app.pricing import quote
-from app.timeutil import first_bookable_date
+from app.timeutil import first_bookable_date, is_weekend
 
 BIRTHDAY_HORIZON_DAYS = 366
 HOLD_MINUTES = 15
@@ -196,6 +196,11 @@ def create_hold(
         text("SELECT id, local_date, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": slot_id}
     ).one_or_none()
     if slot is None:
+        db.rollback()
+        raise SlotNotFound()
+    # A weekday slot row exists only because the owner booked that date by hand. Parents are never offered
+    # one and must not be able to take one by naming its id: to this door, a weekday date does not exist.
+    if not is_weekend(slot.local_date):
         db.rollback()
         raise SlotNotFound()
     if slot.local_date < first_bookable_date(today, min_lead_days):

@@ -15,6 +15,7 @@ from tests.helpers import (
     make_booking,
     make_hold,
     make_slot,
+    weekend_near,
     payment_event,
     start_hold,
     today,
@@ -29,7 +30,7 @@ def test_everything_in_the_owner_surface_needs_the_password(db: Session) -> None
 
 def test_the_bookings_list_is_newest_first(db: Session) -> None:
     for offset in (30, 37, 44):
-        slot = make_slot(db, today() + timedelta(days=offset))
+        slot = make_slot(db, weekend_near(offset))
         make_booking(db, make_hold(db, slot), slot)
     rows = admin_client().get("/api/admin/bookings").json()
     booked_at = [row["booked_at"] for row in rows]
@@ -37,7 +38,7 @@ def test_the_bookings_list_is_newest_first(db: Session) -> None:
 
 
 def test_a_booking_row_carries_what_the_owner_needs(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     make_booking(db, make_hold(db, slot), slot)
     row = admin_client().get("/api/admin/bookings").json()[0]
     for field in ("day_label", "time_label", "name", "phone", "email", "package", "kids", "addons",
@@ -47,9 +48,9 @@ def test_a_booking_row_carries_what_the_owner_needs(db: Session) -> None:
 
 
 def test_a_booking_row_shows_moves_and_refunds(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
-    target = make_slot(db, today() + timedelta(days=45))
+    target = make_slot(db, weekend_near(45))
     client().post(f"/api/manage/{booking.manage_token}/reschedule", json={"slot_id": target.id})
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
 
@@ -61,7 +62,7 @@ def test_a_booking_row_shows_moves_and_refunds(db: Session) -> None:
 
 
 def test_active_holds_are_listed_with_their_created_at(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=14))
+    slot = make_slot(db, weekend_near(14))
     created = start_hold(client_from("203.0.113.40"), slot.id)
     assert created.status_code == 201
 
@@ -84,20 +85,20 @@ def test_a_hold_that_reached_checkout_shows_its_contact(db: Session) -> None:
 
 def test_lapsed_holds_are_not_listed(db: Session) -> None:
     """Expiry is lazy everywhere, so this list asks the same question the availability grid does."""
-    slot = make_slot(db, today() + timedelta(days=14))
+    slot = make_slot(db, weekend_near(14))
     make_hold(db, slot, expires_in=timedelta(minutes=-1))
     assert admin_client().get("/api/admin/holds").json() == []
 
 
 def test_a_booked_hold_is_not_listed(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=14))
+    slot = make_slot(db, weekend_near(14))
     make_booking(db, make_hold(db, slot, status="booked"), slot)
     assert admin_client().get("/api/admin/holds").json() == []
 
 
 def test_holds_are_newest_first(db: Session) -> None:
     for n, offset in enumerate((14, 21, 28)):
-        slot = make_slot(db, today() + timedelta(days=offset))
+        slot = make_slot(db, weekend_near(offset))
         assert start_hold(client_from(f"203.0.113.{60 + n}"), slot.id).status_code == 201
     created = [row["created_at"] for row in admin_client().get("/api/admin/holds").json()]
     assert created == sorted(created, reverse=True)
@@ -121,14 +122,14 @@ def test_the_owner_hears_about_a_booking(db: Session) -> None:
 
 
 def test_the_owner_hears_about_a_cancellation(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     assert len(_owner_bodies(db, "cancelled")) == 1
 
 
 def test_the_owner_hears_when_the_refund_actually_lands(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     refund_id = db.execute(text("SELECT square_refund_id FROM refunds")).scalar_one()
@@ -140,7 +141,7 @@ def test_the_owner_hears_when_the_refund_actually_lands(db: Session) -> None:
 
 
 def test_a_failed_refund_tells_the_owner_to_finish_it_by_hand(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     refund_id = db.execute(text("SELECT square_refund_id FROM refunds")).scalar_one()
@@ -153,7 +154,7 @@ def test_a_failed_refund_tells_the_owner_to_finish_it_by_hand(db: Session) -> No
 
 def test_the_pending_hop_is_not_announced(db: Session) -> None:
     """Square answers PENDING first and COMPLETED later. Only the ending is news."""
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     refund_id = db.execute(text("SELECT square_refund_id FROM refunds")).scalar_one()
@@ -163,7 +164,7 @@ def test_the_pending_hop_is_not_announced(db: Session) -> None:
 
 
 def test_a_redelivered_refund_event_announces_once(db: Session) -> None:
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     refund_id = db.execute(text("SELECT square_refund_id FROM refunds")).scalar_one()
@@ -177,7 +178,7 @@ def test_a_redelivered_refund_event_announces_once(db: Session) -> None:
 
 def test_messages_are_logged_when_twilio_is_absent(db: Session) -> None:
     """The test environment has no Twilio credentials, which is the owner-demo fallback: log the body."""
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{booking.manage_token}/cancel", json={})
     row = db.execute(
@@ -190,7 +191,7 @@ def test_messages_are_logged_when_twilio_is_absent(db: Session) -> None:
 def test_a_cancellation_notice_never_fails_the_cancellation(db: Session, messaging) -> None:
     """Notifications are best-effort: the booking is already cancelled and the date already freed."""
     messaging.raise_error = RuntimeError("network down")
-    slot = make_slot(db, today() + timedelta(days=30))
+    slot = make_slot(db, weekend_near(30))
     booking = make_booking(db, make_hold(db, slot), slot)
     assert client().post(f"/api/manage/{booking.manage_token}/cancel", json={}).status_code == 200
     db.refresh(booking)

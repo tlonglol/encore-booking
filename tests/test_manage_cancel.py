@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models import Booking, Refund
 from tests.conftest import FakeSquareApi
-from tests.helpers import client, make_booking, make_hold, make_slot, today
+from tests.helpers import client, make_booking, make_hold, make_slot, today, weekend_near
 
 
 def _booking_on(db: Session, days_away: int) -> Booking:
-    slot = make_slot(db, today() + timedelta(days=days_away))
+    slot = make_slot(db, weekend_near(days_away))
     return make_booking(db, make_hold(db, slot), slot)
 
 

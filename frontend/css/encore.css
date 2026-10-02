@@ -645,6 +645,7 @@ img { max-width: 100%; }
   font-size: 14px;
 }
 .notice.error { border-color: rgba(229, 72, 77, 0.5); background: rgba(229, 72, 77, 0.1); color: #ffb4b6; }
+.notice.warn { border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.1); color: var(--warn); }
 .notice .alts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.75rem; }
 .chip {
   font-family: var(--condensed);
@@ -903,6 +904,54 @@ img { max-width: 100%; }
   font-size: 14px;
 }
 .manual-radio input { width: 22px; height: 22px; accent-color: var(--blue); flex: none; }
+
+/* The owner's date field: the funnel's segmented date control (see .date-seg) in the admin form. The box
+   sizing lives here because the funnel's own is scoped to .bday-card, which this is not inside. */
+.manual-date { min-height: 44px; }
+.manual-date .seg {
+  min-width: 34px;
+  width: 34px;
+  padding: 8px 2px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--white);
+  font-family: var(--body);
+  font-size: 16px;
+  color-scheme: dark;
+}
+.manual-date .seg-y { width: 56px; }
+.manual-date .seg::placeholder { color: var(--gray); }
+.manual-date .seg:focus { outline: none; background: rgba(26, 116, 204, 0.4); }
+.manual-date .seg-cal { width: 38px; height: 38px; }
+.manual-date .seg-cal:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 1px; }
+
+/* What the server says that date is. Green only when the date can actually be booked, so "open" reads as
+   permission and every other answer reads as a stop. */
+.date-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--gray-light);
+  min-height: 18px;
+}
+.date-state.ok { color: var(--ok); }
+.date-state.bad { color: #ffb4b6; }
+.date-check { font-size: 14px; line-height: 1; }
+/* A weekday is bookable and is still worth stopping on, so it gets the same amber accent as a booking's
+   notes rather than the red of something refused. */
+.date-warn {
+  margin-top: 6px;
+  padding: 2px 10px;
+  border-left: 3px solid var(--warn);
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--white);
+}
 
 .manual-total {
   display: flex;

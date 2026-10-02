@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import Booking
 from app.pricing import ADDONS, Quote, quote
 from app.services.refunds import record_refund, refund_decision
-from app.timeutil import VENUE_TZ, first_bookable_date
+from app.timeutil import VENUE_TZ, first_bookable_date, is_weekend
 
 # The live site's rule: free cancel or reschedule up to a week before the party.
 FREE_WINDOW_DAYS = 7
@@ -169,6 +169,10 @@ def reschedule_booking(db: Session, booking_id: int, slot_id: int, today: date, 
         text("SELECT id, local_date, starts_at, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": slot_id}
     ).one_or_none()
     if slot is None:
+        db.rollback()
+        raise SlotNotBookable("That date is not available.")
+    # A weekday slot exists only because the owner booked it by hand; a party cannot be moved onto one.
+    if not is_weekend(slot.local_date):
         db.rollback()
         raise SlotNotBookable("That date is not available.")
     if slot.id == booking.slot_id:

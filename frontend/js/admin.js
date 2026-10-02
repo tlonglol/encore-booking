@@ -1,5 +1,5 @@
 (function () {
-  const { api, detailText, money, el } = window.Encore;
+  const { api, detailText, money, el, paint } = window.Encore;
   const $ = (id) => document.getElementById(id);
   const panel = $("panel");
   window.EncoreShell.mountFooter();
@@ -459,12 +459,13 @@
   }
 
   // ---------- manual booking entry ----------
-  // The form is built from /api/catalog and /api/availability, so the packages, add-ons, limits and open
-  // dates are the server's own and cannot drift from what the funnel prices against. The total is quoted
-  // by /api/quote on every change rather than multiplied here: the client never computes a price.
+  // The form is built from /api/catalog, so the packages, add-ons and limits are the server's own and cannot
+  // drift from what the funnel prices against. The total is quoted by /api/quote on every change rather than
+  // multiplied here: the client never computes a price. The date is typed, not chosen from a list, because
+  // the owner books dates the parents' grid never shows; what state that date is in comes from the server.
 
   let catalog = null;
-  const manual = { quoting: 0 };
+  const manual = { quoting: 0, checking: 0, today: "", date: "", state: null, weekdayOk: null };
 
   function field(label, control, hint) {
     return el("div", { class: "field" }, [el("label", { for: control.id, text: label }), control, hint ? el("p", { class: "field-hint", text: hint }) : null]);
@@ -479,6 +480,8 @@
     const form = $("manual-form");
     form.replaceChildren(el("div", { class: "spinner", role: "status", "aria-label": "Loading" }));
     if (!dialog.open) dialog.showModal();
+    // Availability is read for one thing only: today's date in the venue's timezone, which is what the date
+    // field's minimum is. The list of dates in it is the parents' grid and is not what the owner books from.
     const [catalogRes, availabilityRes] = await Promise.all([
       catalog ? Promise.resolve({ status: 200, data: catalog }) : api("/api/catalog"),
       api("/api/availability"),
@@ -488,25 +491,29 @@
       return;
     }
     catalog = catalogRes.data;
-    const open = availabilityRes.data.days.filter((d) => d.status === "open");
-    form.replaceChildren(...manualFields(open));
-    if (!open.length) return;
+    manual.today = availabilityRes.data.today;
+    manual.date = "";
+    manual.state = null;
+    manual.weekdayOk = null;
+    form.replaceChildren(...manualFields());
     quoteManual();
-    form.querySelector("#m-slot").focus();
+    syncSubmit();
+    form.querySelector("#m-date-m").focus();
   }
 
-  function manualFields(open) {
-    if (!open.length) {
-      return [el("p", { class: "notice", text: "No open dates. Unblock a date or cancel a booking first." })];
-    }
-    const slot = el("select", { id: "m-slot", name: "m-slot", required: true },
-      open.map((d) => el("option", { value: String(d.slot_id), text: `${d.day_label} · ${d.time_label}` })));
+  function manualFields() {
     const pkg = el("select", { id: "m-package", name: "m-package", onchange: quoteManual },
       catalog.packages.map((p) => el("option", { value: p.key, text: `${p.label} — ${money(p.price_cents)}, up to ${p.included_kids} kids` })));
     const kids = input("m-kids", { type: "number", inputmode: "numeric", min: catalog.min_kids, max: catalog.max_kids, value: 15, required: true, onchange: quoteManual });
 
     return [
-      field("Date", slot),
+      el("div", { class: "field" }, [
+        el("label", { for: "m-date-m", text: "Date" }),
+        dateControl(),
+        el("div", { class: "date-state", id: "m-date-state", role: "status" }),
+        el("div", { class: "date-warn", id: "m-date-warn", role: "status", hidden: true }),
+        el("p", { class: "field-hint", text: "Any date from today on. The venue's party slots are weekends, at 10:00 AM." }),
+      ]),
       field("Package", pkg),
       field("Kids", kids, `Over the included headcount is ${money(catalog.additional_kid_cents)} each.`),
       el("fieldset", { class: "manual-addons" }, [
@@ -531,9 +538,217 @@
       el("div", { id: "m-error", role: "alert" }),
       el("div", { class: "manual-actions" }, [
         el("button", { type: "button", class: "btn btn-ghost", text: "Cancel", onclick: closeManual }),
-        el("button", { type: "submit", class: "btn btn-primary", id: "m-submit", text: "Add booking" }),
+        el("button", { type: "submit", class: "btn btn-primary", id: "m-submit", text: "Add booking", disabled: true }),
       ]),
     ];
+  }
+
+  // ---------- the date field ----------
+  // Three numeric boxes plus a calendar button, the same control the funnel's birthday entry uses: a date
+  // the owner can type and one he can pick, with Backspace stepping back through the boxes. The old control
+  // here was a dropdown of the next eight weekends, which could not express "the Saturday in March".
+
+  const SEG_LENGTHS = [2, 2, 4];
+  // What each state the server can report reads as, and whether it can be booked over.
+  const DATE_WORDS = {
+    open: { tone: "ok", word: "open" },
+    none: { tone: "ok", word: "open" },
+    booked: { tone: "bad", word: "booked" },
+    held: { tone: "bad", word: "on hold" },
+    blocked: { tone: "bad", word: "blocked" },
+    past: { tone: "bad", word: "in the past" },
+  };
+
+  function realDate(value) {
+    const when = new Date(value + "T12:00:00Z");
+    return !Number.isNaN(when.getTime()) && when.toISOString().slice(0, 10) === value;
+  }
+
+  function dateBoxes() {
+    return [...document.querySelectorAll("#manual-form .date-seg .seg")];
+  }
+
+  function writeDateBoxes(value) {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+    const [m, d, y] = dateBoxes();
+    if (!m) return;
+    m.value = parts ? parts[2] : "";
+    d.value = parts ? parts[3] : "";
+    y.value = parts ? parts[1] : "";
+  }
+
+  function dateControl() {
+    const box = (cls, placeholder, label) =>
+      el("input", {
+        class: `seg ${cls}`,
+        type: "text",
+        inputmode: "numeric",
+        autocomplete: "off",
+        enterkeyhint: "next",
+        maxlength: String(cls === "seg-y" ? 4 : 2),
+        placeholder: placeholder,
+        "aria-label": label,
+      });
+    const boxes = [box("seg-m", "mm", "Party month"), box("seg-d", "dd", "Party day"), box("seg-y", "yyyy", "Party year")];
+    boxes[0].id = "m-date-m";
+
+    boxes.forEach((input, i) => {
+      input.addEventListener("input", () => {
+        input.value = input.value.replace(/\D/g, "").slice(0, SEG_LENGTHS[i]);
+        // A first digit that can only start a two-digit month or day pads itself and moves on.
+        if (i === 0 && input.value.length === 1 && Number(input.value) > 1) input.value = "0" + input.value;
+        if (i === 1 && input.value.length === 1 && Number(input.value) > 3) input.value = "0" + input.value;
+        if (input.value.length === SEG_LENGTHS[i] && i < 2) boxes[i + 1].focus();
+        commitDateBoxes();
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Backspace" && input.value === "" && i > 0) {
+          // Already empty: step back to the previous box, ready for the next Backspace to clear it.
+          event.preventDefault();
+          boxes[i - 1].focus();
+        } else if (event.key === "ArrowLeft" && input.selectionStart === 0 && i > 0) {
+          event.preventDefault();
+          boxes[i - 1].focus();
+        } else if (event.key === "ArrowRight" && input.selectionEnd === input.value.length && i < 2) {
+          event.preventDefault();
+          boxes[i + 1].focus();
+        } else if ((event.key === "/" || event.key === "-" || event.key === ".") && i < 2) {
+          event.preventDefault();
+          if (input.value) boxes[i + 1].focus();
+        }
+      });
+      input.addEventListener("focus", () => input.select());
+    });
+
+    // The native calendar, one tap away. It lives off-screen but real so the browser can open its picker.
+    const native = el("input", {
+      id: "m-date",
+      type: "date",
+      class: "seg-native",
+      tabindex: "-1",
+      "aria-hidden": "true",
+      min: manual.today || null,
+      onchange: (event) => {
+        if (event.target.value) applyDate(event.target.value, true);
+      },
+    });
+    // The one thing that opens the calendar. Everywhere else in the control is for typing.
+    const calendar = el("button", {
+      type: "button",
+      class: "seg-cal",
+      "aria-label": "Pick from calendar",
+      onclick: () => {
+        boxes.forEach((b) => b.blur());
+        if (native.showPicker) {
+          try {
+            native.showPicker();
+            return;
+          } catch (error) {
+            /* some browsers refuse outside a trusted gesture; fall through to focusing it */
+          }
+        }
+        native.focus();
+      },
+    });
+    calendar.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
+
+    const wrap = el("div", { class: "date-seg manual-date", role: "group", "aria-label": "Party date" }, [
+      el("div", { class: "seg-fields" }, [
+        boxes[0],
+        el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+        boxes[1],
+        el("span", { class: "seg-sep", text: "/", "aria-hidden": "true" }),
+        boxes[2],
+      ]),
+      calendar,
+      native,
+    ]);
+
+    // Clicking the typing area puts the caret in the nearest box rather than doing nothing.
+    wrap.querySelector(".seg-fields").addEventListener("click", (event) => {
+      if (!event.target.closest(".seg")) boxes[0].focus();
+    });
+    return wrap;
+  }
+
+  // Called on every keystroke. Only a complete real date is sent to be checked, and a half-typed one puts
+  // the field back to having no date: the submit books the date this has committed, so leaving the old one
+  // committed under boxes that now read something else is how the wrong Saturday gets booked.
+  function commitDateBoxes() {
+    const [mm, dd, yy] = dateBoxes().map((b) => b.value);
+    if (!mm && !dd && !yy) return applyDate("", false);
+    if (mm.length !== 2 || dd.length !== 2 || yy.length !== 4) {
+      applyDate("", false);
+      return showDateState({ tone: "", text: "Finish the date." });
+    }
+    const value = `${yy}-${mm}-${dd}`;
+    if (!realDate(value)) return showDateState({ tone: "bad", text: "That isn't a real date. Check the month and day." });
+    applyDate(value, false);
+  }
+
+  function applyDate(value, fromPicker) {
+    if (fromPicker) writeDateBoxes(value);
+    const native = $("m-date");
+    if (native) native.value = value || "";
+    if (value === manual.date && (manual.state || !value)) return;
+    manual.date = value;
+    manual.state = null;
+    // A new date is a new decision: a weekday confirmed a moment ago does not carry over to this one.
+    manual.weekdayOk = null;
+    showWeekday(null);
+    if (!value) {
+      showDateState(null);
+      syncSubmit();
+      return;
+    }
+    checkDate(value);
+  }
+
+  // The server is asked what every date is, and answers are sequenced so a slow reply cannot land after a
+  // newer one and describe a date the owner has already changed.
+  async function checkDate(value) {
+    const ticket = ++manual.checking;
+    showDateState({ tone: "", text: "Checking that date…" });
+    syncSubmit();
+    const { status, data } = await guarded(`/api/admin/slots/status?date=${encodeURIComponent(value)}`);
+    if (ticket !== manual.checking || value !== manual.date) return;
+    if (status !== 200) {
+      showDateState({ tone: "bad", text: detailText(data, "Couldn't check that date.") });
+      syncSubmit();
+      return;
+    }
+    manual.state = data;
+    const read = DATE_WORDS[data.status] || { tone: "bad", word: data.status };
+    showDateState({
+      tone: read.tone,
+      check: read.tone === "ok",
+      text: `${data.day_label} · ${data.time_label} · ${read.word}${data.confirmation_code ? ` (${data.confirmation_code})` : ""}`,
+    });
+    showWeekday(data.bookable && data.weekday ? data.weekday_label : null);
+    syncSubmit();
+  }
+
+  function showDateState(view) {
+    const node = $("m-date-state");
+    if (!node) return;
+    node.className = `date-state${view && view.tone ? " " + view.tone : ""}`;
+    paint(node, view ? [view.check ? el("span", { class: "date-check", "aria-hidden": "true", text: "✓" }) : null, view.text] : []);
+  }
+
+  function showWeekday(label) {
+    const node = $("m-date-warn");
+    if (!node) return;
+    node.hidden = !label;
+    paint(node, label ? [`That's a ${label}, not a weekend. Check the date.`] : []);
+  }
+
+  // Nothing is submittable until the server has said the date can be booked. The button is the only guard
+  // the owner sees; the real ones are the unique indexes the submit runs into.
+  function syncSubmit() {
+    const submit = $("m-submit");
+    if (submit) submit.disabled = !(manual.date && manual.state && manual.state.bookable);
   }
 
   function addonControl(addon) {
@@ -569,7 +784,7 @@
   function manualPayload() {
     const age = $("m-kid-age").value.trim();
     return {
-      slot_id: parseInt($("m-slot").value, 10),
+      date: manual.date,
       package: $("m-package").value,
       kids: parseInt($("m-kids").value, 10),
       addons: readAddons(),
@@ -620,9 +835,20 @@
     event.preventDefault();
     const submit = $("m-submit");
     $("m-error").replaceChildren();
+    // A weekday is allowed and is also far more likely a mistyped date than an intention, so it costs one
+    // more press. The first one says what the date is; the second books it.
+    if (manual.state && manual.state.weekday && manual.weekdayOk !== manual.date) {
+      manual.weekdayOk = manual.date;
+      $("m-error").replaceChildren(
+        el("p", {
+          class: "notice warn",
+          text: `${manual.state.day_label} is a ${manual.state.weekday_label}, not a weekend. Press "Add booking" again to book it anyway.`,
+        })
+      );
+      return;
+    }
     submit.disabled = true;
     const { status, data } = await guarded("/api/admin/bookings", { method: "POST", body: manualPayload() });
-    submit.disabled = false;
     if (status === 201) {
       closeManual();
       show("bookings");
@@ -630,9 +856,11 @@
       return;
     }
     if (status === 401) return closeManual();
+    // The date may well be why this failed, so what it is now is re-read rather than left as it was.
     $("m-error").replaceChildren(el("p", { class: "notice error", text: detailText(data, "Couldn't add the booking.") }));
+    if (manual.date) checkDate(manual.date);
+    else syncSubmit();
   });
-
   const TABS = { bookings, holds, refunds, requests, flags, dates, notifications, leads, waitlist };
 
   async function counts() {

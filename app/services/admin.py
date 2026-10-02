@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.models import Booking, Hold
 from app.pricing import quote
 from app.services.booking import new_confirmation_code, new_manage_token
-from app.services.holds import SLOT_INDEX, SlotNotFound, SlotUnavailable, normalize_phone
+from app.services.holds import SLOT_INDEX, SlotUnavailable, normalize_phone
+from app.services.slots import lock_or_create_slot
 
 FULL_REFUND_NOTICE = timedelta(days=7)
 # The second index that guards a slot. Both are checked by the manual path, because a manual booking
@@ -31,7 +32,7 @@ class AlreadyCancelled(Exception):
 class ManualBookingInput:
     """What the owner types in. No prices: the server computes them from the package and the headcount."""
 
-    slot_id: int
+    local_date: date
     package: str
     kids: int
     addons: dict[str, int]
@@ -73,7 +74,7 @@ def list_bookings(db: Session) -> list[Row]:
     )
 
 
-def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
+def create_manual_booking(db: Session, data: ManualBookingInput, today: date) -> Booking:
     """A party taken over the phone, written through the same slot exclusivity a parent's booking gets.
 
     No card, no Square, no parent notification. What it does share with the online path is the only part
@@ -81,17 +82,19 @@ def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
     transaction, so `holds_one_active_per_slot` and `bookings_one_live_per_slot` decide who wins. An
     application-level "is it free?" check runs first for a clear error message, but it is not the guard;
     the indexes are, which is what makes the gap between the form loading and the owner submitting safe.
+
+    The owner can name any future date, including one the parents' grid has never materialized and one
+    that is not a weekend. That date's slot row is created here, inside this same transaction and under
+    the same lock, so a date that did not exist a moment ago is claimed exactly as exclusively as one
+    that did.
     """
+    if data.local_date < today:
+        raise ValueError("That date has already passed. Pick a future date.")
     priced = quote(data.package, data.kids, data.addons)
     phone = normalize_phone(data.phone)
     email = data.email.strip().lower()
 
-    slot = db.execute(
-        text("SELECT id, starts_at, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": data.slot_id}
-    ).one_or_none()
-    if slot is None:
-        db.rollback()
-        raise SlotNotFound()
+    slot = lock_or_create_slot(db, data.local_date)
     if slot.blocked_at is not None:
         db.rollback()
         raise SlotUnavailable()
@@ -103,7 +106,7 @@ def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
             "UPDATE holds SET status = 'expired', updated_at = now()"
             " WHERE slot_id = :id AND status = 'pending_payment' AND expires_at <= now()"
         ),
-        {"id": data.slot_id},
+        {"id": slot.id},
     )
     taken = db.execute(
         text(
@@ -113,14 +116,14 @@ def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
                 OR EXISTS (SELECT 1 FROM bookings WHERE slot_id = :id AND cancelled_at IS NULL)
             """
         ),
-        {"id": data.slot_id},
+        {"id": slot.id},
     ).scalar_one()
     if taken:
         db.rollback()
         raise SlotUnavailable()
 
     hold = Hold(
-        slot_id=data.slot_id,
+        slot_id=slot.id,
         status="booked",
         # Booked outright, so there is no window to run out; the column is NOT NULL and wants a value.
         expires_at=func.now(),
@@ -140,36 +143,39 @@ def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
         notes=(data.notes or "").strip() or None,
     )
     db.add(hold)
-    db.flush()
-    booking = Booking(
-        hold_id=hold.id,
-        slot_id=data.slot_id,
-        confirmation_code=new_confirmation_code(),
-        manage_token=new_manage_token(),
-        package=hold.package,
-        kids=hold.kids,
-        addons=hold.addons,
-        line_items=hold.line_items,
-        total_cents=hold.total_cents,
-        deposit_cents=hold.deposit_cents,
-        first_name=hold.first_name,
-        last_name=hold.last_name,
-        phone=hold.phone,
-        email=hold.email,
-        kid_name=hold.kid_name,
-        kid_age=hold.kid_age,
-        birthday=hold.birthday,
-        notes=hold.notes,
-        # Not a Square id and shaped so it can never be mistaken for one. `origin` is what the refund path
-        # actually reads; this keeps the unique NOT NULL column honest.
-        square_payment_id=f"manual-{uuid.uuid4()}",
-        square_order_id="",
-        paid_amount_cents=priced.deposit_cents if data.deposit_collected else 0,
-        origin="manual",
-        event_starts_at=slot.starts_at,
-    )
-    db.add(booking)
+    # One try around both writes. Both rows claim the slot: the hold's claim is tested when this flush
+    # writes it, the booking's when the commit writes that, and either one losing means the date went while
+    # the owner was typing. Outside this try, a flush that lost the race would be a 500 rather than a 409.
     try:
+        db.flush()
+        booking = Booking(
+            hold_id=hold.id,
+            slot_id=slot.id,
+            confirmation_code=new_confirmation_code(),
+            manage_token=new_manage_token(),
+            package=hold.package,
+            kids=hold.kids,
+            addons=hold.addons,
+            line_items=hold.line_items,
+            total_cents=hold.total_cents,
+            deposit_cents=hold.deposit_cents,
+            first_name=hold.first_name,
+            last_name=hold.last_name,
+            phone=hold.phone,
+            email=hold.email,
+            kid_name=hold.kid_name,
+            kid_age=hold.kid_age,
+            birthday=hold.birthday,
+            notes=hold.notes,
+            # Not a Square id and shaped so it can never be mistaken for one. `origin` is what the refund path
+            # actually reads; this keeps the unique NOT NULL column honest.
+            square_payment_id=f"manual-{uuid.uuid4()}",
+            square_order_id="",
+            paid_amount_cents=priced.deposit_cents if data.deposit_collected else 0,
+            origin="manual",
+            event_starts_at=slot.starts_at,
+        )
+        db.add(booking)
         db.commit()
     except IntegrityError as error:
         db.rollback()

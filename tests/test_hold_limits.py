@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from tests.helpers import browser_from, checkout, client_from, make_hold, make_slot, next_saturday, start_hold, today
+from tests.helpers import browser_from, checkout, client_from, make_hold, make_slot, next_saturday, start_hold, today, weekend_near
 
 
 def test_sixth_hold_from_one_ip_returns_429(db: Session) -> None:
@@ -43,8 +43,11 @@ def test_checkout_with_an_email_already_holding_returns_429(db: Session) -> None
     assert "email" in response.json()["detail"]
 
 
-def test_hold_inside_lead_time_is_rejected(db: Session) -> None:
-    too_soon = make_slot(db, today() + timedelta(days=1))
+def test_hold_inside_lead_time_is_rejected(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The lead time has to be what refuses it, so the date is a real weekend and the window is widened to
+    reach it: a weekday slot is refused for not being a weekend before lead time is ever consulted."""
+    monkeypatch.setattr(get_settings(), "min_lead_days", 14)
+    too_soon = make_slot(db, weekend_near(3))
     response = start_hold(client_from("198.51.100.8"), too_soon.id)
     assert response.status_code == 422
     assert "too soon" in response.json()["detail"]

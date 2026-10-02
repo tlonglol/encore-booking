@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Booking, Refund
 from tests.conftest import FakeSquareApi
-from tests.helpers import admin_client, client, make_booking, make_hold, make_slot, today
+from tests.helpers import admin_client, client, make_booking, make_hold, make_slot, today, weekend_near
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def reset_settings():
 
 
 def _booking(db: Session, day_offset: int, **overrides) -> Booking:
-    slot = make_slot(db, today() + timedelta(days=day_offset))
+    slot = make_slot(db, weekend_near(day_offset))
     booking = make_booking(db, make_hold(db, slot), slot)
     for key, value in overrides.items():
         setattr(booking, key, value)

@@ -35,6 +35,32 @@ def next_saturday(min_days_ahead: int) -> date:
     return day + timedelta(days=(5 - day.weekday()) % 7)
 
 
+def next_tuesday(min_days_ahead: int) -> date:
+    """A weekday the parents' grid only ever shows as a request date, and the owner can still book."""
+    day = today() + timedelta(days=min_days_ahead)
+    return day + timedelta(days=(1 - day.weekday()) % 7)
+
+
+def weekend_near(days_ahead: int) -> date:
+    """The weekend day closest to roughly that far out, and never today or earlier.
+
+    A fixture that says "a party about a month away" has to land on a weekend, because every parent-facing
+    surface treats a weekday date as a request date with no slot: the grid will not show one and a hold or
+    a move will not take one. Nearest rather than next, so the distance a test asked for mostly survives:
+    at most four days off, which keeps a date asked for inside the one-week refund window inside it. A
+    distance that has to be exact (the 48-hour add-on cutoff) cannot be expressed as a weekend at all, and
+    those tests keep their own weekday dates: nothing parent-facing reads them.
+    """
+    target = today() + timedelta(days=days_ahead)
+    if target.weekday() >= 5:
+        return target
+    forward = (5 - target.weekday()) % 7
+    backward = (target.weekday() - 6) % 7
+    if target - timedelta(days=backward) <= today() or forward <= backward:
+        return target + timedelta(days=forward)
+    return target - timedelta(days=backward)
+
+
 def make_slot(db: Session, day: date) -> Slot:
     slot = Slot(starts_at=slot_start_utc(day), local_date=day)
     db.add(slot)

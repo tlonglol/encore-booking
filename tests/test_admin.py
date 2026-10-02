@@ -1,11 +1,14 @@
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 
 import httpx
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
-from app.models import Booking
+from app.models import Booking, Slot
+from app.timeutil import slot_start_utc
 from tests.conftest import FakeSquareApi
 from tests.helpers import (
     admin_client,
@@ -15,8 +18,10 @@ from tests.helpers import (
     deliver,
     make_slot,
     next_saturday,
+    next_tuesday,
     payment_event,
     start_hold,
+    today,
 )
 
 
@@ -27,9 +32,9 @@ def _book(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
     return hold_id, code
 
 
-def manual_body(slot_id: int, **overrides: object) -> dict[str, object]:
+def manual_body(day: date, **overrides: object) -> dict[str, object]:
     body: dict[str, object] = {
-        "slot_id": slot_id,
+        "date": day.isoformat(),
         "package": "standard",
         "kids": 18,
         "addons": {"pizza_pack": 1},
@@ -52,7 +57,7 @@ def test_admin_endpoints_require_login() -> None:
         assert anonymous.get(path).status_code == 401
     assert anonymous.post("/api/admin/bookings/1/cancel", json={}).status_code == 401
     assert anonymous.post("/api/admin/flags/1/resolve").status_code == 401
-    assert anonymous.post("/api/admin/bookings", json=manual_body(1)).status_code == 401
+    assert anonymous.post("/api/admin/bookings", json=manual_body(next_saturday(9))).status_code == 401
     assert anonymous.post("/api/admin/bookings/1/balance-paid", json={"paid": True}).status_code == 401
 
 
@@ -121,7 +126,7 @@ def test_notification_log_is_visible(db: Session) -> None:
 def test_manual_booking_is_priced_by_the_server(db: Session, square_api: FakeSquareApi) -> None:
     slot = make_slot(db, next_saturday(9))
     admin = admin_client()
-    created = admin.post("/api/admin/bookings", json=manual_body(slot.id, total_cents=1, deposit_cents=1))
+    created = admin.post("/api/admin/bookings", json=manual_body(slot.local_date, total_cents=1, deposit_cents=1))
     assert created.status_code == 201, created.text
     # Standard $399 + 3 kids over the included 15 + one Pizza Pack, the same quote the funnel produces.
     assert created.json()["total_cents"] == 54400
@@ -144,7 +149,7 @@ def test_manual_booking_is_priced_by_the_server(db: Session, square_api: FakeSqu
 def test_manual_booking_can_waive_the_deposit(db: Session) -> None:
     slot = make_slot(db, next_saturday(9))
     admin = admin_client()
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id, deposit_collected=False)).status_code == 201
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date, deposit_collected=False)).status_code == 201
     (booking,) = admin.get("/api/admin/bookings").json()
     assert booking["paid_amount_cents"] == 0
     assert booking["deposit_status"] == "waived"
@@ -153,7 +158,7 @@ def test_manual_booking_can_waive_the_deposit(db: Session) -> None:
 
 def test_manual_booking_claims_the_date(db: Session) -> None:
     slot = make_slot(db, next_saturday(9))
-    assert admin_client().post("/api/admin/bookings", json=manual_body(slot.id)).status_code == 201
+    assert admin_client().post("/api/admin/bookings", json=manual_body(slot.local_date)).status_code == 201
     taken = start_hold(client_from("203.0.113.77"), slot.id)
     assert taken.status_code == 409, "the date is gone for parents too"
     days = {day["slot_id"]: day["status"] for day in client().get("/api/availability").json()["days"]}
@@ -165,18 +170,147 @@ def test_manual_booking_refuses_a_date_that_is_not_free(db: Session) -> None:
 
     held = make_slot(db, next_saturday(9))
     assert start_hold(client_from("203.0.113.78"), held.id).status_code == 201
-    assert admin.post("/api/admin/bookings", json=manual_body(held.id)).status_code == 409
+    assert admin.post("/api/admin/bookings", json=manual_body(held.local_date)).status_code == 409
 
     blocked = make_slot(db, next_saturday(16))
     assert admin.post(f"/api/admin/slots/{blocked.id}/block").status_code == 200
-    assert admin.post("/api/admin/bookings", json=manual_body(blocked.id)).status_code == 409
+    assert admin.post("/api/admin/bookings", json=manual_body(blocked.local_date)).status_code == 409
 
     booked = make_slot(db, next_saturday(23))
-    assert admin.post("/api/admin/bookings", json=manual_body(booked.id)).status_code == 201
-    assert admin.post("/api/admin/bookings", json=manual_body(booked.id)).status_code == 409
+    assert admin.post("/api/admin/bookings", json=manual_body(booked.local_date)).status_code == 201
+    assert admin.post("/api/admin/bookings", json=manual_body(booked.local_date)).status_code == 409
 
-    assert admin.post("/api/admin/bookings", json=manual_body(999999)).status_code == 404
     assert db.scalar(select(func.count()).select_from(Booking)) == 1, "only the one that was allowed through"
+
+
+def test_manual_booking_refuses_a_date_that_has_already_passed(db: Session) -> None:
+    """The one date rule the owner does have. Lead time is not enforced here; yesterday is."""
+    admin = admin_client()
+    yesterday = today() - timedelta(days=1)
+    refused = admin.post("/api/admin/bookings", json=manual_body(yesterday))
+    assert refused.status_code == 422, refused.text
+    assert "passed" in refused.json()["detail"]
+    # Today is fine: a party booked by phone for this afternoon is exactly what this is for.
+    assert admin.post("/api/admin/bookings", json=manual_body(today())).status_code == 201
+    assert db.scalar(select(func.count()).select_from(Slot).where(Slot.local_date == yesterday)) == 0
+
+
+def test_manual_booking_creates_the_slot_for_a_date_that_has_none(db: Session) -> None:
+    """A date the parents' grid has never materialized. The slot row is written in the same transaction."""
+    day = next_saturday(400)
+    assert db.scalar(select(func.count()).select_from(Slot).where(Slot.local_date == day)) == 0
+    created = admin_client().post("/api/admin/bookings", json=manual_body(day))
+    assert created.status_code == 201, created.text
+
+    slot = db.scalars(select(Slot).where(Slot.local_date == day)).one()
+    assert slot.starts_at == slot_start_utc(day), "10:00 AM, the same default seeding uses"
+    assert slot.blocked_at is None
+    booking = db.scalars(select(Booking).where(Booking.slot_id == slot.id)).one()
+    assert booking.event_starts_at == slot.starts_at
+
+
+def test_two_submits_for_one_brand_new_date_make_one_slot_and_one_booking(db: Session) -> None:
+    """The get-or-create race. The loser's insert blocks on the winner's uncommitted index entry, then
+    finds the winner's slot and its booking, so it loses the way every other contested date loses."""
+    day = next_saturday(400)
+    barrier = threading.Barrier(2)
+
+    def attempt(n: int) -> httpx.Response:
+        admin = admin_client()
+        barrier.wait()
+        return admin.post("/api/admin/bookings", json=manual_body(day, email=f"new{n}@example.com"))
+
+    with ThreadPoolExecutor(2) as pool:
+        responses = list(pool.map(attempt, range(2)))
+
+    assert sorted(r.status_code for r in responses) == [201, 409], [r.text for r in responses]
+    assert db.scalar(select(func.count()).select_from(Slot).where(Slot.local_date == day)) == 1
+    assert db.scalar(select(func.count()).select_from(Booking)) == 1
+
+
+def test_a_refused_submit_leaves_no_slot_behind(db: Session) -> None:
+    """The slot is created inside the booking's transaction, so a booking that is refused un-creates it."""
+    day = next_saturday(400)
+    admin = admin_client()
+    assert admin.post("/api/admin/bookings", json=manual_body(day, kids=99)).status_code == 422
+    assert db.scalar(select(func.count()).select_from(Slot)) == 0, "a mistyped party left nothing behind"
+
+
+def test_a_weekday_the_owner_books_never_reaches_the_parents_grid(db: Session) -> None:
+    """The owner can book a Tuesday. To every parent-facing surface that date still has no slot."""
+    tuesday = next_tuesday(9)
+    assert admin_client().post("/api/admin/bookings", json=manual_body(tuesday)).status_code == 201
+    slot = db.scalars(select(Slot).where(Slot.local_date == tuesday)).one()
+
+    days = {day["date"]: day for day in client().get("/api/availability").json()["days"]}
+    assert days[tuesday.isoformat()]["status"] == "request", "a weekday is a request date, booked or not"
+    assert days[tuesday.isoformat()]["slot_id"] is None, "and the grid is never handed its id"
+    # Naming the id directly is the other way in, and it is the one DECISIONS 42 was worried about.
+    assert start_hold(client_from("203.0.113.90"), slot.id).status_code == 404
+
+
+def test_a_party_cannot_be_moved_onto_a_weekday_the_owner_created(db: Session) -> None:
+    hold_id, _ = _book(db)
+    tuesday = next_tuesday(16)
+    assert admin_client().post("/api/admin/bookings", json=manual_body(tuesday)).status_code == 201
+    weekday_slot = db.scalars(select(Slot).where(Slot.local_date == tuesday)).one()
+    # Free it, so the only thing refusing the move is the date not being a weekend.
+    (manual_booking,) = db.scalars(select(Booking).where(Booking.slot_id == weekday_slot.id)).all()
+    token = db.scalar(select(Booking.manage_token).where(Booking.hold_id == uuid.UUID(hold_id)))
+    assert client().post(f"/api/admin/bookings/{manual_booking.id}/cancel", json={}).status_code == 401
+    admin_client().post(f"/api/admin/bookings/{manual_booking.id}/cancel", json={})
+
+    moved = client().post(f"/api/manage/{token}/reschedule", json={"slot_id": weekday_slot.id})
+    assert moved.status_code == 422, moved.text
+    assert db.scalar(select(Booking.slot_id).where(Booking.manage_token == token)) != weekday_slot.id
+
+
+# ---------- the date the owner is typing ----------
+
+
+def test_slot_status_reports_a_free_date_and_creates_nothing(db: Session) -> None:
+    admin = admin_client()
+    day = next_saturday(400)
+    answer = admin.get("/api/admin/slots/status", params={"date": day.isoformat()}).json()
+    assert answer["status"] == "none", "no slot row yet, and the owner can still book it"
+    assert answer["bookable"] is True
+    assert answer["time_label"] == "10:00 AM"
+    assert answer["weekday"] is False and answer["weekday_label"] is None
+    assert answer["confirmation_code"] is None
+    assert db.scalar(select(func.count()).select_from(Slot)) == 0, "asking is not booking"
+
+    make_slot(db, day)
+    assert admin.get("/api/admin/slots/status", params={"date": day.isoformat()}).json()["status"] == "open"
+
+
+def test_slot_status_names_what_is_sitting_on_a_date(db: Session) -> None:
+    admin = admin_client()
+
+    def status(day: date) -> dict[str, object]:
+        return admin.get("/api/admin/slots/status", params={"date": day.isoformat()}).json()
+
+    booked = next_saturday(9)
+    created = admin.post("/api/admin/bookings", json=manual_body(booked))
+    assert created.status_code == 201, created.text
+    answer = status(booked)
+    assert answer["status"] == "booked" and answer["bookable"] is False
+    assert answer["confirmation_code"] == created.json()["confirmation_code"]
+
+    held = make_slot(db, next_saturday(16))
+    assert start_hold(client_from("203.0.113.91"), held.id).status_code == 201
+    assert status(held.local_date)["status"] == "held"
+
+    blocked = make_slot(db, next_saturday(23))
+    assert admin.post(f"/api/admin/slots/{blocked.id}/block").status_code == 200
+    assert status(blocked.local_date)["status"] == "blocked"
+
+    past = status(today() - timedelta(days=1))
+    assert past["status"] == "past" and past["bookable"] is False
+
+    weekday = status(next_tuesday(9))
+    assert weekday["weekday"] is True, "bookable, and the form says what day of the week it is"
+    assert weekday["bookable"] is True
+    assert weekday["weekday_label"] == "Tuesday"
 
 
 def test_manual_booking_loses_a_race_without_double_booking(db: Session) -> None:
@@ -187,7 +321,7 @@ def test_manual_booking_loses_a_race_without_double_booking(db: Session) -> None
     def attempt(n: int) -> httpx.Response:
         admin = admin_client()
         barrier.wait()
-        return admin.post("/api/admin/bookings", json=manual_body(slot.id, email=f"race{n}@example.com"))
+        return admin.post("/api/admin/bookings", json=manual_body(slot.local_date, email=f"race{n}@example.com"))
 
     with ThreadPoolExecutor(2) as pool:
         responses = list(pool.map(attempt, range(2)))
@@ -202,7 +336,7 @@ def test_manual_booking_loses_a_race_without_double_booking(db: Session) -> None
 def test_manual_booking_tells_the_owner_and_not_the_parent(db: Session) -> None:
     slot = make_slot(db, next_saturday(9))
     admin = admin_client()
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id)).status_code == 201
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date)).status_code == 201
     notes = admin.get("/api/admin/notifications").json()
     assert {note["audience"] for note in notes} == {"owner"}, "the parent paid nothing here and is told nothing"
     (owner,) = notes
@@ -215,7 +349,7 @@ def test_cancelling_a_manual_booking_never_calls_square(db: Session, square_api:
     """Its payment id is synthetic. Refunding it would be a guaranteed failure recorded as a pending refund."""
     slot = make_slot(db, next_saturday(30))
     admin = admin_client()
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id)).status_code == 201
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date)).status_code == 201
     (booking,) = admin.get("/api/admin/bookings").json()
 
     token = db.scalar(select(Booking.manage_token).where(Booking.id == booking["id"]))
@@ -231,11 +365,11 @@ def test_cancelling_a_manual_booking_never_calls_square(db: Session, square_api:
 def test_manual_booking_validates_what_it_is_given(db: Session) -> None:
     slot = make_slot(db, next_saturday(9))
     admin = admin_client()
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id, phone="555")).status_code == 422
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id, package="deluxe")).status_code == 422
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id, kids=99)).status_code == 422
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date, phone="555")).status_code == 422
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date, package="deluxe")).status_code == 422
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date, kids=99)).status_code == 422
     # Highlight Reel without Tournament is the pricing function's rule, and it applies here too.
-    assert admin.post("/api/admin/bookings", json=manual_body(slot.id, addons={"highlight_reel": 1})).status_code == 422
+    assert admin.post("/api/admin/bookings", json=manual_body(slot.local_date, addons={"highlight_reel": 1})).status_code == 422
     assert db.scalar(select(func.count()).select_from(Booking)) == 0
 
 
