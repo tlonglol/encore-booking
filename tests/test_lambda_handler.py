@@ -1,8 +1,8 @@
 """The deployed entrypoint, exercised as Lambda actually calls it.
 
 Every other test in this suite talks to the ASGI app through TestClient. On AWS nothing talks to the
-app directly: a Function URL event arrives, Mangum turns it into an ASGI scope, and the response is
-turned back into a JSON envelope. That translation is where a deploy breaks in ways no TestClient test
+app directly: an API Gateway HTTP API event arrives, Mangum turns it into an ASGI scope, and the
+response is turned back into a JSON envelope. That translation is where a deploy breaks in ways no TestClient test
 can see, so these drive `app.lambda_handler.handler` with real payload-2.0 events and pin the four
 things the money path depends on surviving it: the raw webhook body byte for byte, the client IP coming
 from the event rather than a header, the anonymous session cookie round-tripping, and hold expiry still
@@ -38,7 +38,10 @@ def event(
     cookies: list[str] | None = None,
     base64_body: bool = False,
 ) -> dict[str, Any]:
-    """A Lambda Function URL request, payload format 2.0, shaped the way AWS sends it."""
+    """An API Gateway HTTP API request, payload format 2.0, shaped the way AWS sends it.
+
+    A Lambda Function URL sends the identical format, so these events cover either front door.
+    """
     request_headers = {"host": "encore-test.lambda-url.us-east-1.on.aws", "user-agent": "demo-phone"}
     request_headers.update({k.lower(): v for k, v in (headers or {}).items()})
     raw_path, _, query = path.partition("?")
@@ -107,9 +110,9 @@ def test_a_query_string_arrives_intact() -> None:
 
 
 def test_the_client_ip_is_the_event_source_ip_not_a_spoofable_header(db: Session) -> None:
-    """The hold caps are built on the connection's source IP. Nothing trusted sits in front of a
-    Function URL, so a client-sent X-Forwarded-For has to be ignored, and under Mangum the real address
-    arrives at requestContext.http.sourceIp rather than on any header."""
+    """The hold caps are built on the connection's source IP. API Gateway adds its own X-Forwarded-For,
+    but it is not a proxy we put there to carry a client's address, so a client-sent one is ignored:
+    the true client arrives at requestContext.http.sourceIp, which is where Mangum reads it."""
     slot = make_slot(db, next_saturday(7))
     response = handler(
         event(
@@ -185,7 +188,7 @@ def test_the_webhook_gets_the_raw_body_byte_for_byte(db: Session) -> None:
 
 
 def test_a_base64_encoded_delivery_verifies_the_same(db: Session) -> None:
-    """A Function URL may hand the body over base64-encoded depending on how the sender framed it. The
+    """The gateway may hand the body over base64-encoded depending on how the sender framed it. The
     signature is over the decoded bytes either way, so both framings have to reach the route identically."""
     slot = make_slot(db, next_saturday(7))
     make_hold(db, slot, order_id="order-lambda-2")

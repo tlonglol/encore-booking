@@ -27,8 +27,9 @@ locals {
     # registered in the Square dashboard character for character or every delivery is a 401.
     SQUARE_WEBHOOK_NOTIFICATION_URL = var.public_base_url == "" ? "" : "${var.public_base_url}/api/webhooks/square"
 
-    # Nothing trusted sits in front of the Function URL, so X-Forwarded-For is attacker-controlled and
-    # the hold caps use the connection's source IP (Mangum takes it from requestContext.http.sourceIp).
+    # API Gateway adds its own X-Forwarded-For, but it is not a proxy we put there to carry a client's
+    # real address: the true client is already in the event at requestContext.http.sourceIp, which is
+    # where Mangum reads it from. A client-sent X-Forwarded-For is attacker-controlled, so it is ignored.
     TRUST_PROXY_HEADERS = "false"
 
     SQUARE_ENVIRONMENT           = var.square_environment
@@ -84,24 +85,4 @@ resource "aws_lambda_function" "api" {
   }
 
   depends_on = [aws_cloudwatch_log_group.api]
-}
-
-resource "aws_lambda_function_url" "api" {
-  function_name      = aws_lambda_function.api.function_name
-  authorization_type = "NONE"
-  invoke_mode        = "BUFFERED"
-
-  # No cors {} block on purpose. CORS is FastAPI's CORSMiddleware (app/main.py), which also covers local
-  # dev and ngrok. Configuring it here too makes both layers add Access-Control-Allow-Origin, and a
-  # browser rejects the doubled value. On this one-origin deploy nothing is cross-site anyway.
-}
-
-# A NONE-auth Function URL still needs this to be publicly invokable. Terraform does not add it (the AWS
-# console does), and without it every request to the Function URL is a 403.
-resource "aws_lambda_permission" "function_url" {
-  statement_id           = "FunctionURLAllowPublicAccess"
-  action                 = "lambda:InvokeFunctionUrl"
-  function_name          = aws_lambda_function.api.function_name
-  principal              = "*"
-  function_url_auth_type = "NONE"
 }
