@@ -15,6 +15,9 @@
   --gray-light: #bbbbbb;
   --star: #fbbc04; /* Google review gold, from the live page's star rows */
   /* Tier accents: ours, not the live site's (it is single-accent blue). Text only, never backgrounds. */
+  /* The border every typed control on the site already used as a literal; named here so the plan tabs can
+     borrow the same edge instead of adding a fourth copy of it. */
+  --border-input: #2a3a50;
   --tier-standard: #2ec8d8;
   --tier-plus: #1a74cc;
   --tier-premium: #9b7bff;
@@ -600,7 +603,7 @@ img { max-width: 100%; }
 .field input, .field select, .field textarea {
   width: 100%;
   background: var(--black);
-  border: 1px solid #2a3a50;
+  border: 1px solid var(--border-input);
   border-radius: 6px;
   padding: 14px 16px;
   color: var(--white);
@@ -886,7 +889,7 @@ img { max-width: 100%; }
   min-height: 44px;
   flex: none;
   background: var(--black);
-  border: 1px solid #2a3a50;
+  border: 1px solid var(--border-input);
   border-radius: 6px;
   padding: 8px 10px;
   color: var(--white);
@@ -2237,3 +2240,32 @@ body.scroll-locked { overflow: hidden; }
   .rail.tucked .rail-body, .rail.tucked .rail-foot { display: none; }
   .rail, .rail.tucked { transition: none; }
 }
+
+/* ── Plan tabs read as a segmented control, not three labels ──
+   At rest each card carries the same 1px input border and its own tier accent held one stop back, so the row
+   reads as three things you can press. The selected one takes its accent to full strength and keeps the
+   doubled border it already had. */
+.tab-cell {
+  border-color: var(--border-input);
+  /* The accent held back by mixing toward grey rather than toward black: darkening would take the Plus blue
+     almost into the card it sits on while leaving the cyan bright, and the three have to read as one band at
+     rest. Two tints, because the name and the price are different sizes and answer to different contrast
+     floors: the price is 26px display type (large text, 3:1), the name is 13px (small text, 4.5:1). Plus is
+     only 3.97:1 against the card even at full strength, so its name has to be lifted toward the light grey to
+     stay readable at all while still carrying its own hue. Measured on all three tiers, not eyeballed. */
+  --tier-rest: color-mix(in srgb, var(--tier) 70%, var(--gray));
+  --tier-rest-sm: color-mix(in srgb, var(--tier) 55%, var(--gray-light));
+  transition: border-color 0.15s, background 0.15s;
+}
+@media (prefers-reduced-motion: reduce) { .tab-cell { transition: none; } }
+.tab-cell:hover { border-color: color-mix(in srgb, var(--tier) 55%, var(--border-input)); }
+.tab-name { color: var(--tier-rest-sm); }
+.tab-price { color: var(--tier-rest); }
+/* Selected: full strength, and the name goes white so the chosen card leads with its label. */
+.tab-cell.active .tab-name { color: var(--white); }
+.tab-cell.active .tab-price { color: var(--tier); }
+/* The divider between the price and its "i" is part of the control's edge, so it matches it. */
+.tab-info { border-left-color: var(--border-input); }
+.tab-btn, .tab-info { cursor: pointer; }
+/* Pressed: a short tier wash over the half that was actually touched. */
+.tab-btn:active, .tab-info:active { background: color-mix(in srgb, var(--tier) 16%, transparent); }
