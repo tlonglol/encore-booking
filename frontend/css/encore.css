@@ -998,7 +998,7 @@ body.has-pill { --pill-clear: 52px; }
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
 }
-.banner .nav-logo { padding: 0.85rem 0; }
+.banner .nav-logo { padding-top: 0.85rem; padding-bottom: 0.85rem; }
 .banner-phone {
   margin-left: auto;
   font-family: var(--condensed);
