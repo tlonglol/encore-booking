@@ -34,6 +34,7 @@ locals {
 
     SQUARE_ENVIRONMENT           = var.square_environment
     SQUARE_ACCESS_TOKEN          = var.square_access_token
+    SQUARE_APPLICATION_ID        = var.square_application_id
     SQUARE_LOCATION_ID           = var.square_location_id
     SQUARE_WEBHOOK_SIGNATURE_KEY = var.square_webhook_signature_key
 

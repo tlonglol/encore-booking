@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -20,10 +21,13 @@ from app.schemas import (
     HoldStatusOut,
     LineItemOut,
     PartyDetails,
+    PayIn,
+    PayOut,
     SlotInfo,
 )
 from app.models import Slot
-from app.notifications import notify_hold_spike
+from app.notifications import notify_after_commit, notify_hold_spike
+from app.services.booking import PaymentEvent, book_payment
 from app.services.holds import (
     CheckoutInput,
     DateCoolingDown,
@@ -34,8 +38,9 @@ from app.services.holds import (
     SlotNotFound,
     SlotTooSoon,
     SlotUnavailable,
-    attach_payment_link,
+    booking_for_hold,
     checkout_hold,
+    payable_hold,
     create_hold,
     hold_state,
     normalize_ip,
@@ -44,8 +49,10 @@ from app.services.holds import (
 )
 from app.services.turnstile import verify as turnstile_verify
 from app.services.slots import open_alternatives
-from app.services.square import SquareError, create_deposit_link
+from app.services.square import CardDeclined, SquareError, create_payment
 from app.timeutil import format_date, format_day, format_time, venue_today
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -200,20 +207,100 @@ def post_checkout(hold_id: str, body: CheckoutIn, db: Session = Depends(get_db))
         )
     slot = db.get(Slot, hold.slot_id)
     assert slot is not None
-    if not hold.square_order_id:
-        try:
-            link = create_deposit_link(settings, hold, f"{format_day(slot.starts_at)} {format_time(slot.starts_at)}")
-        except SquareError as error:
-            # The hold is kept: the parent's date is not released over a Square blip, and the button retries.
-            raise HTTPException(
-                status_code=502, detail="We couldn't start checkout. Your date is still held; please try again."
-            ) from error
-        attach_payment_link(db, hold, link.id, link.url, link.order_id)
-    assert hold.checkout_url is not None
+    # Nothing is created at Square here any more. The card is collected on our own page and charged by
+    # POST /pay, so this endpoint only snapshots the party at a server-computed price.
     return CheckoutOut(
-        checkout_url=hold.checkout_url,
         seconds_remaining=max(0, int((hold.expires_at - datetime.now(UTC)).total_seconds())),
         party=party_details(hold, slot.starts_at, None, None),
+    )
+
+
+@router.post("/api/holds/{hold_id}/pay", response_model=PayOut)
+def post_pay(hold_id: str, body: PayIn, db: Session = Depends(get_db)) -> Any:
+    """Charge the deposit against a single-use card token and commit the booking.
+
+    The money moves before the booking exists, which is the one ordering that cannot lose a parent's
+    payment: if this process dies between the two, Square's webhook finds the hold by reference_id and
+    commits the same booking. The token is never stored, never logged, and never leaves this function.
+    """
+    settings = get_settings()
+    parsed = _parse_hold_id(hold_id)
+
+    # Already paid for. Two ways to arrive here and both are the same answer: the parent pressed the
+    # button twice, or the webhook backstop committed the booking because this process died after
+    # Square took the money. Telling either of them the date was released would be a lie, and charging
+    # a second card would be worse, so show them the booking they already have.
+    settled = booking_for_hold(db, parsed)
+    if settled is not None:
+        slot = db.get(Slot, settled.slot_id)
+        assert slot is not None
+        return PayOut(
+            confirmation_code=settled.confirmation_code,
+            manage_token=settled.manage_token,
+            party=party_details(
+                settled, slot.starts_at, settled.confirmation_code, settled.first_name, settled.manage_token
+            ),
+        )
+
+    try:
+        hold = payable_hold(db, parsed)
+    except SlotNotFound as error:
+        raise HTTPException(status_code=404, detail="Hold not found") from error
+    except HoldNotPending as error:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "This hold is no longer active, so the date was released.", "status": error.status},
+        )
+    slot = db.get(Slot, hold.slot_id)
+    assert slot is not None
+
+    try:
+        payment = create_payment(settings, hold, body.token)
+    except CardDeclined as error:
+        # The hold and the date survive a declined card: another card is allowed to work.
+        return JSONResponse(status_code=402, content={"detail": error.message, "code": error.code})
+    except SquareError as error:
+        raise HTTPException(
+            status_code=502, detail="We couldn't reach the card processor. Your date is still held; please try again."
+        ) from error
+
+    if payment.status != "COMPLETED":
+        # APPROVED-but-not-captured and friends: no booking, no money kept, hold intact.
+        log.warning("Square payment %s came back %s, not COMPLETED", payment.id, payment.status)
+        raise HTTPException(
+            status_code=502, detail="That payment didn't complete. Your date is still held; please try again."
+        )
+
+    result = book_payment(
+        db,
+        PaymentEvent(
+            event_id=f"sync:{payment.id}",
+            event_type="payment.sync",
+            payment_id=payment.id,
+            order_id=payment.order_id,
+            status=payment.status,
+            amount_cents=payment.amount_cents,
+            currency="USD",
+            card_fingerprint=payment.card_fingerprint,
+            reference_id=payment.reference_id or str(hold.id),
+        ),
+    )
+    notify_after_commit(db, settings, result)
+
+    booking = booking_for_hold(db, hold.id)
+    if booking is None:
+        # Square took the money and we could not record it: flagged for the owner by _apply_payment, and
+        # never silently swallowed. The parent is told the truth and the hold is not resold.
+        log.error("Payment %s for hold %s produced no booking (outcome=%s)", payment.id, hold.id, result.outcome)
+        raise HTTPException(
+            status_code=502,
+            detail="Your payment went through but we couldn't finish locking the date. We'll call you within the hour.",
+        )
+    return PayOut(
+        confirmation_code=booking.confirmation_code,
+        manage_token=booking.manage_token,
+        party=party_details(booking, slot.starts_at, booking.confirmation_code, booking.first_name,
+                            booking.manage_token),
     )
 
 

@@ -37,6 +37,9 @@ class PaymentEvent:
     # Square's identifier for the card, at payment.card_details.card.fingerprint. Absent for other tender
     # types, which is why every guard that uses it falls back to the phone and the email.
     card_fingerprint: str | None = None
+    # The hold id, set by the pay endpoint on CreatePayment. A deposit taken through the Payments API has
+    # no order, so this is the only thing tying the payment back to a hold.
+    reference_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,7 @@ def parse_payment_event(event: Any) -> PaymentEvent | None:
         amount_cents=amount if isinstance(amount, int) else None,
         currency=money.get("currency"),
         card_fingerprint=card if isinstance(card, str) and card else None,
+        reference_id=payment.get("reference_id") or None,
     )
 
 
@@ -211,18 +215,46 @@ def _book(db: Session, hold: Hold, event: PaymentEvent) -> Booking:
     return booking
 
 
+def _find_hold(db: Session, event: PaymentEvent) -> Hold | None:
+    """By reference_id first, then order_id, and always FOR UPDATE.
+
+    The row lock is what serializes a synchronous pay request against Square's webhook for the same
+    payment: whichever gets the lock first commits, and the other re-checks under it and sees a
+    duplicate. Payments API deposits carry a reference; payment-link payments carry an order; a booking
+    made before this change has only the order, so both lookups stay.
+    """
+    locked = lambda clause: db.scalars(  # noqa: E731
+        select(Hold).where(clause).with_for_update().execution_options(populate_existing=True)
+    ).one_or_none()
+    if event.reference_id:
+        try:
+            return locked(Hold.id == uuid.UUID(event.reference_id))
+        except ValueError:
+            pass
+    if event.order_id:
+        return locked(Hold.square_order_id == event.order_id)
+    return None
+
+
+def book_payment(db: Session, event: PaymentEvent) -> WebhookResult:
+    """The synchronous path: Square has already taken the money, now record it.
+
+    Deliberately the same `_apply_payment` the webhook uses, rather than a second implementation that
+    would drift. It keys on square_payment_id, so this and the webhook are idempotent against each other
+    whichever order they arrive in. No square_events row is claimed here: that ledger is Square's
+    deliveries, and this was not one.
+    """
+    result = _apply_payment(db, event)
+    db.commit()
+    log.info("Square payment %s outcome=%s (synchronous)", event.payment_id, result.outcome)
+    return result
+
+
 def _apply_payment(db: Session, event: PaymentEvent) -> WebhookResult:
     recorded, recorded_hold = _recorded_hold(db, event.payment_id)
     if recorded:
         return WebhookResult(200, "duplicate", recorded_hold)
-    hold = None
-    if event.order_id:
-        hold = db.scalars(
-            select(Hold)
-            .where(Hold.square_order_id == event.order_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        ).one_or_none()
+    hold = _find_hold(db, event)
     if hold is None:
         _flag(db, event, None, "unmatched_order")
         return WebhookResult(200, "unmatched")

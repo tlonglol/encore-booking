@@ -123,7 +123,6 @@ class HoldStatusOut(BaseModel):
 
 
 class CheckoutOut(BaseModel):
-    checkout_url: str
     seconds_remaining: int
     party: PartyDetails
 
@@ -210,3 +209,19 @@ class RequestOut(BaseModel):
     package_label: str
     kids: int
     total_cents: int
+
+
+class PayIn(BaseModel):
+    """The only thing the client sends to move money, and it is not an amount.
+
+    A single-use card token from the Square Web Payments SDK. The card number never reaches this server:
+    the SDK collects it in Square-hosted iframes and hands back this token in its place.
+    """
+
+    token: str = Field(min_length=1, max_length=1024)
+
+
+class PayOut(BaseModel):
+    confirmation_code: str
+    manage_token: str
+    party: PartyDetails

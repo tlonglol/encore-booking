@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # demoed without the notice, and going live cannot leave the notice up. Set it only to override that.
     test_mode: bool | None = None
     square_access_token: str = ""
+    # Public by design: the Web Payments SDK needs it in the browser to tokenize a card. It identifies
+    # the application, grants nothing, and is not the access token.
+    square_application_id: str = ""
     square_location_id: str = ""
     square_webhook_signature_key: str = ""
     square_webhook_notification_url: str = ""
@@ -79,6 +82,12 @@ class Settings(BaseSettings):
     @property
     def email_enabled(self) -> bool:
         return bool(self.smtp_host and self.smtp_username and self.smtp_password and self.email_from)
+
+    @property
+    def card_fields_enabled(self) -> bool:
+        """Whether the funnel can mount real card fields. Without an application id it falls back to the
+        dev payment button, which is the local path with no Square credentials at all."""
+        return bool(self.square_application_id and self.square_location_id)
 
     @property
     def fake_square_enabled(self) -> bool:

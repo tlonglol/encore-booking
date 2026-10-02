@@ -41,7 +41,6 @@ def test_checkout_snapshots_server_price(db: Session) -> None:
     response = checkout(funnel, hold_id, 1, total_cents=1)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["checkout_url"].startswith("https://sandbox.square.link/")
     assert body["party"]["total_cents"] == 54400
     hold = db.scalar(select(Hold).where(Hold.id == uuid.UUID(hold_id)))
     assert hold is not None
@@ -52,16 +51,17 @@ def test_checkout_snapshots_server_price(db: Session) -> None:
     assert [item["key"] for item in hold.line_items] == ["package", "additional_kids", "pizza_pack"]
 
 
-def test_second_checkout_reprices_and_reuses_the_payment_link(db: Session, square_api: FakeSquareApi) -> None:
+def test_second_checkout_reprices_and_touches_nothing_at_square(db: Session, square_api: FakeSquareApi) -> None:
+    """Going back a step and changing the party re-snapshots it. Checkout creates nothing at Square now,
+    so editing is free: the money only moves when the card is charged, one step later."""
     slot = make_slot(db, next_saturday(7))
     funnel = client_from("192.0.2.11")
     hold_id = start_hold(funnel, slot.id).json()["hold_id"]
-    first = checkout(funnel, hold_id, 1)
+    checkout(funnel, hold_id, 1)
     second = checkout(funnel, hold_id, 1, addons={})
     assert second.status_code == 200
     assert second.json()["party"]["total_cents"] == 50400, "the new snapshot drops the pizza pack"
-    assert second.json()["checkout_url"] == first.json()["checkout_url"]
-    assert len(square_api.requests) == 1, "the $100 link is reused, never recreated"
+    assert square_api.requests == [], "no order, no link, nothing at Square until the card is charged"
 
 
 def test_checkout_on_expired_hold_changes_nothing(db: Session) -> None:
@@ -162,7 +162,6 @@ def test_get_hold_after_checkout_has_the_party(db: Session) -> None:
     checkout(funnel, hold_id, 1)
     body = client().get(f"/api/holds/{hold_id}").json()
     assert body["status"] == "pending_payment"
-    assert body["checkout_url"] is not None
     assert body["party"]["balance_cents"] == 44400
     assert body["party"]["confirmation_code"] is None
     assert body["party"]["first_name"] is None

@@ -7,8 +7,8 @@ from tests.helpers import create_hold_via_api, deliver, payment_event
 
 @pytest.mark.parametrize("status", ["APPROVED", "PENDING", "FAILED", "CANCELED", ""])
 def test_webhook_ignores_incomplete(db: Session, engine: Engine, status: str) -> None:
-    _, order_id = create_hold_via_api(db)
-    response = deliver(payment_event(order_id, status=status))
+    _, ref = create_hold_via_api(db)
+    response = deliver(payment_event(ref, status=status))
     assert response.status_code == 200
     assert response.json() == {"outcome": "ignored"}
     with engine.connect() as conn:
@@ -19,7 +19,7 @@ def test_webhook_ignores_incomplete(db: Session, engine: Engine, status: str) ->
 
 
 def test_non_payment_events_are_ignored(db: Session) -> None:
-    _, order_id = create_hold_via_api(db)
-    response = deliver(payment_event(order_id, event_type="refund.created"))
+    _, ref = create_hold_via_api(db)
+    response = deliver(payment_event(ref, event_type="refund.created"))
     assert response.status_code == 200
     assert response.json() == {"outcome": "ignored"}

@@ -146,34 +146,39 @@ WEBHOOK_URL = "https://encore-test.example.com/api/webhooks/square"
 
 
 def payment_event(
-    order_id: str,
+    reference_id: str,
     payment_id: str = "pay-1",
     event_id: str | None = None,
     status: str = "COMPLETED",
     amount: int = 10000,
     currency: str = "USD",
     event_type: str = "payment.updated",
+    order_id: str | None = None,
 ) -> bytes:
+    """A Square payment webhook.
+
+    The first argument is how the payment finds its hold. Since the deposit is taken through the
+    Payments API there is no order, so that linkage is `reference_id`, which the pay endpoint sets to
+    the hold id. `order_id` stays available for the one test that still covers the old payment-link
+    shape, where an order was the only linkage there was.
+    """
     import json
 
+    payment: dict[str, object] = {
+        "id": payment_id,
+        "status": status,
+        "amount_money": {"amount": amount, "currency": currency},
+        "order_id": order_id,
+    }
+    if reference_id is not None:
+        payment["reference_id"] = reference_id
     return json.dumps(
         {
             "merchant_id": "MTEST",
             "type": event_type,
             "event_id": event_id or str(uuid.uuid4()),
             "created_at": "2026-10-03T14:00:00Z",
-            "data": {
-                "type": "payment",
-                "id": payment_id,
-                "object": {
-                    "payment": {
-                        "id": payment_id,
-                        "status": status,
-                        "amount_money": {"amount": amount, "currency": currency},
-                        "order_id": order_id,
-                    }
-                },
-            },
+            "data": {"type": "payment", "id": payment_id, "object": {"payment": payment}},
         }
     ).encode()
 
@@ -187,7 +192,12 @@ def deliver(raw: bytes, key: str = WEBHOOK_KEY, url: str = WEBHOOK_URL, signatur
 
 
 def create_hold_via_api(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
-    """Returns (hold_id, square_order_id) for a fresh checked-out hold created through the real two-step funnel."""
+    """Returns (hold_id, reference_id) for a fresh checked-out hold created through the real funnel.
+
+    Both values are the hold id: the pay endpoint sends it to Square as the payment's reference_id, so
+    it is also what a webhook for that payment carries back. They are returned as a pair because the
+    callers read very differently when one is the thing under test and the other is the linkage.
+    """
     slot = make_slot(db, next_saturday(days_ahead))
     funnel_client = client_from(f"203.0.113.{100 + n}")
     created = start_hold(funnel_client, slot.id)
@@ -195,4 +205,4 @@ def create_hold_via_api(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[s
     hold_id = created.json()["hold_id"]
     paid = checkout(funnel_client, hold_id, n)
     assert paid.status_code == 200, paid.text
-    return hold_id, f"order-{hold_id}"
+    return hold_id, hold_id

@@ -16,7 +16,7 @@ def test_expired_hold_payment(db: Session, engine: Engine) -> None:
     assert checkout(funnel, hold_id, 1).status_code == 200
     _expire(engine, hold_id)
 
-    response = deliver(payment_event(f"order-{hold_id}", payment_id="pay-late"))
+    response = deliver(payment_event(hold_id, payment_id="pay-late"))
     assert response.json() == {"outcome": "expired_hold"}
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM bookings")).scalar_one() == 0
@@ -38,10 +38,10 @@ def test_late_payment_after_someone_else_took_the_slot(db: Session, engine: Engi
     assert second.status_code == 201
     assert checkout(winner, second.json()["hold_id"], 2).status_code == 200
 
-    assert deliver(payment_event(f"order-{first}", payment_id="pay-late")).json() == {"outcome": "expired_hold"}
+    assert deliver(payment_event(first, payment_id="pay-late")).json() == {"outcome": "expired_hold"}
     assert client().get(f"/api/holds/{first}").json()["status"] == "paid_after_expiry"
     assert client().get(f"/api/holds/{second.json()['hold_id']}").json()["status"] == "pending_payment"
 
-    assert deliver(payment_event(f"order-{second.json()['hold_id']}", payment_id="pay-on-time")).json() == {
+    assert deliver(payment_event(second.json()["hold_id"], payment_id="pay-on-time")).json() == {
         "outcome": "booked"
     }

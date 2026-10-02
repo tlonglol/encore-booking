@@ -51,8 +51,8 @@ def test_tests_never_use_real_twilio_or_smtp() -> None:
 
 
 def test_sms_templates_match_spec(db: Session, engine: Engine) -> None:
-    hold_id, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    hold_id, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
     owner, _, parent = _rows(engine)
     day = next_saturday(7)
@@ -72,8 +72,8 @@ def test_sms_templates_match_spec(db: Session, engine: Engine) -> None:
 
 
 def test_twilio_send_is_recorded(db: Session, engine: Engine, messaging: FakeMessaging, twilio_on: None) -> None:
-    _, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     rows = {(row["audience"], row["channel"]): row for row in _rows(engine)}
     assert rows[("parent", "sms")]["status"] == rows[("owner", "sms")]["status"] == "sent"
     assert rows[("parent", "email")]["status"] == "logged"
@@ -86,9 +86,9 @@ def test_twilio_send_is_recorded(db: Session, engine: Engine, messaging: FakeMes
 
 
 def test_twilio_failure_never_fails_the_booking(db: Session, engine: Engine, messaging: FakeMessaging, twilio_on: None) -> None:
-    _, order_id = create_hold_via_api(db)
+    _, ref = create_hold_via_api(db)
     messaging.twilio_status = 400
-    response = deliver(payment_event(order_id))
+    response = deliver(payment_event(ref))
     assert response.status_code == 200
     assert response.json() == {"outcome": "booked"}
     with engine.connect() as conn:
@@ -99,9 +99,9 @@ def test_twilio_failure_never_fails_the_booking(db: Session, engine: Engine, mes
 
 
 def test_network_error_never_fails_the_booking(db: Session, engine: Engine, messaging: FakeMessaging, twilio_on: None) -> None:
-    _, order_id = create_hold_via_api(db)
+    _, ref = create_hold_via_api(db)
     messaging.raise_error = RuntimeError("connection reset")
-    assert deliver(payment_event(order_id)).json() == {"outcome": "booked"}
+    assert deliver(payment_event(ref)).json() == {"outcome": "booked"}
     assert [(row["channel"], row["status"]) for row in _rows(engine)] == [
         ("sms", "failed"),
         ("email", "logged"),
@@ -111,8 +111,8 @@ def test_network_error_never_fails_the_booking(db: Session, engine: Engine, mess
 
 def test_discord_owner_post(db: Session, engine: Engine, messaging: FakeMessaging, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "discord_webhook_url", "https://discord.com/api/webhooks/1/abc")
-    _, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     rows = _rows(engine)
     assert [(row["audience"], row["channel"], row["status"]) for row in rows] == [
         ("owner", "discord", "sent"),
@@ -128,16 +128,16 @@ def test_discord_owner_post(db: Session, engine: Engine, messaging: FakeMessagin
 def test_discord_failure_is_recorded(db: Session, engine: Engine, messaging: FakeMessaging, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "discord_webhook_url", "https://discord.com/api/webhooks/1/abc")
     messaging.discord_status = 404
-    _, order_id = create_hold_via_api(db)
-    assert deliver(payment_event(order_id)).json() == {"outcome": "booked"}
+    _, ref = create_hold_via_api(db)
+    assert deliver(payment_event(ref)).json() == {"outcome": "booked"}
     assert _rows(engine)[0]["status"] == "failed"
 
 
 def test_owner_alerted_on_late_payment_and_parent_is_not(db: Session, engine: Engine) -> None:
-    hold_id, order_id = create_hold_via_api(db)
+    hold_id, ref = create_hold_via_api(db)
     with engine.begin() as conn:
         conn.execute(text("UPDATE holds SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": hold_id})
-    deliver(payment_event(order_id))
+    deliver(payment_event(ref))
     (owner,) = _rows(engine)
     assert owner["audience"] == "owner"
     assert str(owner["body"]).startswith("PAYMENT ON EXPIRED HOLD, call parent: Standard")
@@ -145,8 +145,8 @@ def test_owner_alerted_on_late_payment_and_parent_is_not(db: Session, engine: En
 
 
 def test_redelivery_heals_a_crash_between_commit_and_send(db: Session, engine: Engine) -> None:
-    _, order_id = create_hold_via_api(db)
-    raw = payment_event(order_id, event_id="evt-crash")
+    _, ref = create_hold_via_api(db)
+    raw = payment_event(ref, event_id="evt-crash")
     from app.services.square import signature_for
 
     with Session(get_engine()) as session:
@@ -161,8 +161,8 @@ def test_redelivery_heals_a_crash_between_commit_and_send(db: Session, engine: E
 
 def test_no_owner_sms_without_owner_phone(db: Session, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(get_settings(), "owner_phone", "")
-    _, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     assert [(row["audience"], row["channel"]) for row in _rows(engine)] == [("parent", "email"), ("parent", "sms")]
 
 
@@ -176,8 +176,8 @@ def test_money_formatting() -> None:
 
 
 def _confirmed_email_setup(db: Session) -> tuple[str, str]:
-    hold_id, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    hold_id, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
     return hold_id, code
 
@@ -228,9 +228,9 @@ def test_email_is_sent_over_smtp_when_configured(db: Session, engine: Engine, sm
 
 
 def test_smtp_failure_never_fails_the_booking(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
-    _, order_id = create_hold_via_api(db)
+    _, ref = create_hold_via_api(db)
     smtp.fail_with = ConnectionRefusedError("smtp down")
-    response = deliver(payment_event(order_id))
+    response = deliver(payment_event(ref))
     assert response.status_code == 200
     assert response.json() == {"outcome": "booked"}
     with engine.connect() as conn:
@@ -243,20 +243,20 @@ def test_smtp_failure_never_fails_the_booking(db: Session, engine: Engine, smtp:
 
 
 def test_email_is_never_sent_twice(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
-    _, order_id = create_hold_via_api(db)
-    raw = payment_event(order_id, event_id="evt-email-once")
+    _, ref = create_hold_via_api(db)
+    raw = payment_event(ref, event_id="evt-email-once")
     deliver(raw)
     deliver(raw)
-    deliver(payment_event(order_id, event_id="evt-email-once-2", event_type="payment.created"))
+    deliver(payment_event(ref, event_id="evt-email-once-2", event_type="payment.created"))
     assert len(smtp.messages) == 1
     assert len([row for row in _rows(engine) if row["channel"] == "email"]) == 1
 
 
 def test_no_email_for_an_expired_hold_payment(db: Session, engine: Engine, smtp: FakeSmtp, smtp_on: None) -> None:
-    hold_id, order_id = create_hold_via_api(db)
+    hold_id, ref = create_hold_via_api(db)
     with engine.begin() as conn:
         conn.execute(text("UPDATE holds SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": hold_id})
-    deliver(payment_event(order_id))
+    deliver(payment_event(ref))
     assert smtp.messages == []
     assert all(row["channel"] != "email" for row in _rows(engine))
 
@@ -268,8 +268,8 @@ def test_reminder_and_review_templates_exist_for_the_scheduler(db: Session) -> N
     from app.models import Booking
     from app.notifications import parent_reminder_sms, parent_review_sms
 
-    _, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     booking = db.scalars(select(Booking)).one()
     day = next_saturday(7)
     reminder = parent_reminder_sms(booking)

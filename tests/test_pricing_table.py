@@ -156,7 +156,7 @@ def test_tax_lands_in_the_snapshot_and_the_booking(monkeypatch: pytest.MonkeyPat
     assert paid.status_code == 200
     keys = [item["key"] for item in paid.json()["party"]["line_items"]]
     assert "sales_tax" in keys, "checkout prices with tax, so the snapshot carries it"
-    deliver(payment_event(f"order-{hold_id}"))
+    deliver(payment_event(hold_id))
     booking = db.scalars(select(Booking)).one()
     assert [item["key"] for item in booking.line_items][-1] == "sales_tax"
     assert booking.total_cents == sum(item["amount_cents"] for item in booking.line_items)

@@ -106,6 +106,13 @@ class FakeSquareApi:
         self.requests: list[dict[str, object]] = []
         self.fail_with: int | None = None
         self.refund_status = "PENDING"
+        # Payments keyed by idempotency_key, which is how Square behaves: the same key replays the first
+        # response instead of charging again. The pay endpoint's double-submit guard rests on this, so
+        # the fake has to model it rather than mint a new payment every call.
+        self.payments: dict[str, dict[str, object]] = {}
+        self.decline_code: str | None = None
+        self.payment_status = "COMPLETED"
+        self.spent_tokens: set[str] = set()
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
@@ -113,6 +120,8 @@ class FakeSquareApi:
         if self.fail_with:
             return httpx.Response(self.fail_with, json={"errors": [{"code": "INTERNAL_SERVER_ERROR"}]})
         key = body["idempotency_key"]
+        if request.url.path == "/v2/payments":
+            return self._payment(body, key)
         if request.url.path == "/v2/refunds":
             # Square answers PENDING for a card refund it has accepted; its webhook settles it later.
             return httpx.Response(
@@ -136,6 +145,32 @@ class FakeSquareApi:
                 }
             },
         )
+
+
+    def _payment(self, body: dict, key: str) -> httpx.Response:
+        if key in self.payments:
+            # Square replays the original response for a repeated idempotency key.
+            return httpx.Response(200, json={"payment": self.payments[key]})
+        token = str(body.get("source_id", ""))
+        if token in self.spent_tokens:
+            return httpx.Response(
+                400, json={"errors": [{"category": "INVALID_REQUEST_ERROR", "code": "CARD_TOKEN_USED"}]}
+            )
+        if self.decline_code:
+            self.spent_tokens.add(token)
+            return httpx.Response(
+                400, json={"errors": [{"category": "PAYMENT_METHOD_ERROR", "code": self.decline_code}]}
+            )
+        self.spent_tokens.add(token)
+        payment = {
+            "id": f"pay-{key[:12]}",
+            "status": self.payment_status,
+            "amount_money": body["amount_money"],
+            "reference_id": body.get("reference_id"),
+            "card_details": {"card": {"fingerprint": "fp-test"}},
+        }
+        self.payments[key] = payment
+        return httpx.Response(200, json={"payment": payment})
 
 
 @pytest.fixture(autouse=True)

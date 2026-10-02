@@ -166,8 +166,8 @@ def test_the_webhook_gets_the_raw_body_byte_for_byte(db: Session) -> None:
     signature only verifies if they are the exact bytes Square signed: a re-serialized body, or one
     round-tripped through a JSON parser, would differ and every real payment would 401."""
     slot = make_slot(db, next_saturday(7))
-    hold = make_hold(db, slot, order_id="order-lambda-1")
-    raw = payment_event("order-lambda-1", payment_id="pay-lambda-1")
+    hold = make_hold(db, slot)
+    raw = payment_event(str(hold.id), payment_id="pay-lambda-1")
 
     response = handler(
         event(
@@ -191,8 +191,8 @@ def test_a_base64_encoded_delivery_verifies_the_same(db: Session) -> None:
     """The gateway may hand the body over base64-encoded depending on how the sender framed it. The
     signature is over the decoded bytes either way, so both framings have to reach the route identically."""
     slot = make_slot(db, next_saturday(7))
-    make_hold(db, slot, order_id="order-lambda-2")
-    raw = payment_event("order-lambda-2", payment_id="pay-lambda-2")
+    hold = make_hold(db, slot)
+    raw = payment_event(str(hold.id), payment_id="pay-lambda-2")
 
     response = handler(
         event(
@@ -215,8 +215,8 @@ def test_a_tampered_body_is_refused_through_the_handler(db: Session) -> None:
     """The deposit amount raised in flight, with the signature of the original. Verified before parsing,
     so the booking is never considered."""
     slot = make_slot(db, next_saturday(7))
-    make_hold(db, slot, order_id="order-lambda-3")
-    raw = payment_event("order-lambda-3", payment_id="pay-lambda-3")
+    hold = make_hold(db, slot)
+    raw = payment_event(str(hold.id), payment_id="pay-lambda-3")
     signature = signature_for(raw, WEBHOOK_KEY, WEBHOOK_URL)
     tampered = raw.replace(b'"amount": 10000', b'"amount": 10001')
     assert tampered != raw

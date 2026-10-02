@@ -113,8 +113,8 @@ def _owner_bodies(db: Session, event: str) -> list[str]:
 
 
 def test_the_owner_hears_about_a_booking(db: Session) -> None:
-    _, order_id = create_hold_via_api(db, days_ahead=14, n=4)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db, days_ahead=14, n=4)
+    deliver(payment_event(ref))
     bodies = _owner_bodies(db, "booked")
     assert len(bodies) == 1
     assert bodies[0].startswith("NEW PARTY:")

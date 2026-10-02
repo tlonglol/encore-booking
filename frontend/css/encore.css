@@ -1784,3 +1784,32 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
 
 /* Turnstile's own widget host. Only ever populated while TURNSTILE_ENABLED is on. */
 .turnstile-host { position: fixed; bottom: 0; left: 0; z-index: 200; }
+
+
+/* ---- Card entry on Info + Deposit ----
+   Square renders the inputs inside its own iframes; everything around them is ours, and card.js feeds
+   the tokens below into Square's style API so the two halves match. */
+.card-block { margin-top: 1.5rem; }
+.card-label {
+  font-family: var(--condensed);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray-light);
+  margin-bottom: 0.5rem;
+}
+.card-host {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  min-height: 56px;
+}
+.card-note {
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--gray);
+  margin-top: 0.5rem;
+}
+.card-note-error { color: var(--warn); }

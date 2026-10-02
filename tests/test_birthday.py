@@ -63,8 +63,7 @@ def test_birthday_flows_to_the_booking_and_confirmation(db: Session, engine: Eng
     pending = client().get(f"/api/holds/{hold_id}").json()["party"]
     assert pending["birthday"] is None and pending["kid_name"] is None, "never exposed on a pending hold"
 
-    order_id = f"order-{hold_id}"
-    assert deliver(payment_event(order_id)).json() == {"outcome": "booked"}
+    assert deliver(payment_event(hold_id)).json() == {"outcome": "booked"}
     booked = client().get(f"/api/holds/{hold_id}").json()["party"]
     assert booked["kid_name"] == "Sam" and booked["kid_age"] == 8
     assert booked["birthday"] == day.isoformat()
@@ -75,8 +74,8 @@ def test_birthday_flows_to_the_booking_and_confirmation(db: Session, engine: Eng
 
 
 def test_booking_without_a_birthday_is_unchanged(db: Session) -> None:
-    hold_id, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    hold_id, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     party = client().get(f"/api/holds/{hold_id}").json()["party"]
     assert party["birthday"] is None
 
@@ -85,7 +84,7 @@ def test_owner_sees_the_day_of_line(db: Session) -> None:
     funnel, hold_id = _new_hold(db, "203.0.113.183")
     day = today() + timedelta(days=20)
     checkout(funnel, hold_id, 1, birthday=day.isoformat())
-    deliver(payment_event(f"order-{hold_id}"))
+    deliver(payment_event(hold_id))
     (booking,) = admin_client().get("/api/admin/bookings").json()
     party_day = next_saturday(7)
     expected = f"Sam turns 8 {day:%b} {day.day}, party {party_day:%b} {party_day.day}"
@@ -94,8 +93,8 @@ def test_owner_sees_the_day_of_line(db: Session) -> None:
 
 
 def test_owner_line_is_absent_without_a_birthday(db: Session) -> None:
-    _, order_id = create_hold_via_api(db)
-    deliver(payment_event(order_id))
+    _, ref = create_hold_via_api(db)
+    deliver(payment_event(ref))
     (booking,) = admin_client().get("/api/admin/bookings").json()
     assert booking["birthday_line"] is None
 

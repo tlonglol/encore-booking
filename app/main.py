@@ -20,7 +20,6 @@ from app.routes import (
     availability,
     bookings,
     config,
-    dev,
     holds,
     manage,
     quote,
@@ -76,7 +75,6 @@ app.include_router(waitlist.router)
 app.include_router(bookings.router)
 app.include_router(manage.router)
 app.include_router(webhooks.router)
-app.include_router(dev.router)
 app.include_router(admin.router)
 
 class RevalidatingFiles(StaticFiles):

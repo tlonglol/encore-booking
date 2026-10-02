@@ -89,6 +89,12 @@ variable "square_access_token" {
   sensitive = true
 }
 
+variable "square_application_id" {
+  type        = string
+  default     = ""
+  description = "Public identifier the Web Payments SDK needs in the browser to tokenize a card. Not a secret, and not the application secret. Empty means the funnel renders no card fields."
+}
+
 variable "square_location_id" {
   type = string
 }

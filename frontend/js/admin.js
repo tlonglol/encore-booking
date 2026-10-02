@@ -362,7 +362,7 @@
           el("div", {
             class: "card-meta small muted",
             text: `Held since ${when(h.created_at)} · expires ${when(h.expires_at)}`
-              + (h.reached_checkout ? " · reached Square checkout" : "")
+              + (h.reached_checkout ? " · reached the deposit step" : "")
               + (h.client_ip ? ` · ${h.client_ip}` : ""),
           }),
         ])

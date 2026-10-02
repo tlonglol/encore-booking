@@ -20,8 +20,8 @@ from tests.helpers import (
 
 def _book(db: Session, days_ahead: int = 21, n: int = 1) -> Booking:
     """Through the real funnel and a real webhook, so the booking is made the way a parent makes one."""
-    hold_id, order_id = create_hold_via_api(db, days_ahead=days_ahead, n=n)
-    assert deliver(payment_event(order_id, payment_id=f"pay-{n}")).status_code == 200
+    hold_id, ref = create_hold_via_api(db, days_ahead=days_ahead, n=n)
+    assert deliver(payment_event(ref, payment_id=f"pay-{n}")).status_code == 200
     booking = db.query(Booking).filter(Booking.hold_id == hold_id).one()
     db.refresh(booking)
     return booking

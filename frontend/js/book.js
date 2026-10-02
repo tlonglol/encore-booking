@@ -1465,6 +1465,11 @@
         field("kid_name", "Kid's name", { placeholder: "The birthday kid", value: saved.kidName }),
         field("kid_age", "Kid's age", { inputmode: "numeric", pattern: "[0-9]*", maxlength: "2", placeholder: "e.g. 9", value: saved.kidAge }),
       ]),
+      el("div", { class: "card-block", id: "card-block" }, [
+        el("div", { class: "card-label", text: "Card" }),
+        el("div", { class: "card-host", id: "card-host" }),
+        el("div", { class: "card-note", id: "card-note", text: "Secured by Square. We never see your card number." }),
+      ]),
       el("div", { class: "pay-summary", id: "pay-summary" }),
       el("div", { id: "pay-error", role: "alert" })
     );
@@ -1472,6 +1477,29 @@
       $(id).addEventListener("blur", id === "email" ? saveEmailOnBlur : rememberForm);
     });
     renderSummary();
+    mountCard();
+  }
+
+  // The card fields live in Square's iframes inside our page, so the parent never leaves the funnel.
+  // If they cannot be mounted (local dev with no Square credentials, or Square's CDN unreachable) the
+  // block says so rather than leaving an unexplained gap above the pay button.
+  async function mountCard() {
+    const host = $("card-host");
+    if (!host) return;
+    if (!(await window.EncoreCard.enabled())) {
+      $("card-block").hidden = true;
+      return;
+    }
+    try {
+      const ok = await window.EncoreCard.mount(host);
+      if (!ok) throw new Error("not mounted");
+    } catch (error) {
+      const note = $("card-note");
+      if (note) {
+        note.textContent = "The card form didn't load. Refresh the page, or call (646) 203-8087 and we'll take it by phone.";
+        note.classList.add("card-note-error");
+      }
+    }
   }
 
   function field(id, label, options) {
@@ -1581,23 +1609,51 @@
       kid_age: Number(form.kidAge),
       birthday: draft.birthday || null,
     };
-    const { status, data } = await api(`/api/holds/${draft.holdId}/checkout`, { method: "POST", body: body });
-    if (status === 200) {
-      window.location.href = data.checkout_url;
+    const snapshot = await api(`/api/holds/${draft.holdId}/checkout`, { method: "POST", body: body });
+    if (snapshot.status !== 200) {
+      ui.busy = false;
+      renderAdvance();
+      const data = snapshot.data;
+      if (snapshot.status === 409 && data && data.status) return showHoldModal(data.status);
+      if (snapshot.status === 429 && data && data.expires_at) {
+        const until = new Date(data.expires_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        return payError(`${detailText(data)} It frees up around ${until}.`);
+      }
+      return payError(detailText(data));
+    }
+
+    // The card is read by Square inside its own iframe; this page only ever sees the token.
+    let cardToken = "dev-token";
+    if (await window.EncoreCard.enabled()) {
+      button.textContent = "Checking your card…";
+      const tokenized = await window.EncoreCard.tokenize();
+      if (tokenized.error) {
+        ui.busy = false;
+        renderAdvance();
+        return payError(tokenized.error);
+      }
+      cardToken = tokenized.token;
+    }
+
+    button.textContent = "Taking your deposit…";
+    const charged = await api(`/api/holds/${draft.holdId}/pay`, { method: "POST", body: { token: cardToken } });
+    if (charged.status === 200) {
+      // Booked. The hold became a booking, so the browser-wide pointer is dropped before leaving the
+      // funnel: there is nothing left to count down and nothing left to resume.
+      await window.EncoreCard.destroy();
+      forgetHold(draft.holdId);
+      window.location.href = `/confirm.html?code=${encodeURIComponent(charged.data.confirmation_code)}`;
       return;
     }
     ui.busy = false;
     renderAdvance();
-    if (status === 409 && data && data.status) {
-      showHoldModal(data.status);
+    if (charged.status === 409 && charged.data && charged.data.status) {
+      showHoldModal(charged.data.status);
       return;
     }
-    if (status === 429 && data && data.expires_at) {
-      const until = new Date(data.expires_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-      payError(`${detailText(data)} It frees up around ${until}.`);
-      return;
-    }
-    payError(detailText(data));
+    // 402 is a declined card and 502 is Square being unreachable. Both keep the date, and both are worth
+    // trying again, so the card fields are left mounted and filled.
+    payError(detailText(charged.data));
   }
 
   // ---------- hold header, timer and expiry ----------

@@ -257,6 +257,34 @@ def create_hold(
     return hold
 
 
+def payable_hold(db: Session, hold_id: uuid.UUID) -> Hold:
+    """The hold a card is about to be charged against: still pending, still in time, already snapshotted.
+
+    Read without a row lock on purpose. The lock that matters is taken later, inside the one function
+    that writes the booking, and holding one across a call to Square would pin a database row open for
+    the length of a card authorization.
+    """
+    row = db.execute(
+        select(Hold, func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"))
+        .where(Hold.id == hold_id)
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if row is None:
+        raise SlotNotFound()
+    hold, remaining = row
+    if hold.status != "pending_payment" or remaining <= 0:
+        status = "expired" if hold.status == "pending_payment" else hold.status
+        raise HoldNotPending(status)
+    if hold.total_cents is None or not hold.phone or not hold.email:
+        # Checkout is what writes the snapshot, and the deposit is only honest once it exists.
+        raise HoldNotPending("incomplete")
+    return hold
+
+
+def booking_for_hold(db: Session, hold_id: uuid.UUID) -> Booking | None:
+    return db.scalars(select(Booking).where(Booking.hold_id == hold_id)).one_or_none()
+
+
 def save_email(db: Session, hold_id: uuid.UUID, email: str) -> bool:
     """Abandoner recovery: the checkout page persists the email on blur, long before the pay button."""
     updated = db.execute(

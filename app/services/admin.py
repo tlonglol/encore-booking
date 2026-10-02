@@ -158,7 +158,7 @@ def list_active_holds(db: Session) -> list[Row]:
                 SELECT h.id, h.created_at, h.expires_at,
                        greatest(0, extract(epoch FROM h.expires_at - now()))::int AS seconds_remaining,
                        h.package, h.kids, h.first_name, h.last_name, h.phone, h.email, h.total_cents,
-                       h.client_ip, h.checkout_url IS NOT NULL AS reached_checkout,
+                       h.client_ip, h.phone IS NOT NULL AS reached_checkout,
                        s.starts_at AS slot_starts_at
                 FROM holds h JOIN slots s ON s.id = h.slot_id
                 WHERE h.status = 'pending_payment' AND h.expires_at > now()

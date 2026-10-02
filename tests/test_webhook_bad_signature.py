@@ -15,9 +15,9 @@ def _state(engine: Engine) -> tuple[int, int, int, list[str]]:
 
 
 def test_webhook_bad_signature(db: Session, engine: Engine) -> None:
-    _, order_id = create_hold_via_api(db)
+    _, ref = create_hold_via_api(db)
     before = _state(engine)
-    raw = payment_event(order_id)
+    raw = payment_event(ref)
     tampered = raw.replace(b'"amount": 10000', b'"amount": 10001')
     from app.services.square import signature_for
 

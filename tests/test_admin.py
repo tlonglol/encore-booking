@@ -5,8 +5,8 @@ from tests.helpers import admin_client, client, client_from, create_hold_via_api
 
 
 def _book(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
-    hold_id, order_id = create_hold_via_api(db, days_ahead, n)
-    deliver(payment_event(order_id, payment_id=f"pay-{hold_id}"))
+    hold_id, ref = create_hold_via_api(db, days_ahead, n)
+    deliver(payment_event(ref, payment_id=f"pay-{hold_id}"))
     code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
     return hold_id, code
 
@@ -58,10 +58,10 @@ def test_cancel_frees_the_slot_and_records_refund_data(db: Session, engine: Engi
 
 
 def test_flags_are_visible_and_resolvable(db: Session, engine: Engine) -> None:
-    hold_id, order_id = create_hold_via_api(db)
+    hold_id, ref = create_hold_via_api(db)
     with engine.begin() as conn:
         conn.execute(text("UPDATE holds SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": hold_id})
-    deliver(payment_event(order_id, payment_id="pay-late"))
+    deliver(payment_event(ref, payment_id="pay-late"))
     admin = admin_client()
     (flag,) = admin.get("/api/admin/flags").json()
     assert flag["kind"] == "paid_after_expiry"

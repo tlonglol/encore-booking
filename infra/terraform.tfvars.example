@@ -20,6 +20,9 @@ session_secret = "PASTE_64_RANDOM_HEX_CHARS"
 # Square SANDBOX until the owner approves going live. Live keys never enter this repo or its history.
 square_environment           = "sandbox"
 square_access_token          = "PASTE_SANDBOX_ACCESS_TOKEN"
+# Public identifier the browser needs to tokenize a card. Developer Console > your app > Sandbox >
+# Credentials, shown as "Sandbox Application ID". Not the access token and not the application secret.
+square_application_id        = "PASTE_SANDBOX_APPLICATION_ID"
 square_location_id           = "PASTE_SANDBOX_LOCATION_ID"
 square_webhook_signature_key = "PASTE_WEBHOOK_SIGNATURE_KEY"
 
