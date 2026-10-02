@@ -233,6 +233,7 @@
     ui.policyOpen = false;
     ui.notesOpen = false;
     // A step change outlives any keyboard that was up when it started.
+    forgetTyping();
     tuckSheet(false);
     save();
     if (step === "date") startGridPoll();
@@ -1590,11 +1591,21 @@
   //
   // The keyboard is the hard part. iOS opens it by shrinking the visual viewport while leaving the layout
   // viewport alone, so a `position: fixed; bottom: 0` sheet stays pinned below the keyboard, over the field
-  // being typed into. While the keyboard is up the sheet drops to its header row and is translated up by
+  // being typed into. While a field is focused the sheet drops to its header row and is translated up by
   // exactly the slice the keyboard took, read from visualViewport. No transition touches that transform: the
   // sheet is simply where it belongs on every frame, and the button row appears and disappears without motion.
   const UNTUCK_MS = 120;
-  let untuckTimer = null;
+  // What the sheet shows is decided by focus alone, never by the keyboard's measured height. iOS animates the
+  // keyboard open across several visualViewport resizes, and the early ones are too short to read as a
+  // keyboard: deciding the sheet from that measurement untucked it part-way through and left the policy line,
+  // the pay button and its caption stranded above the keyboard for the rest of the time the parent was typing.
+  // The viewport is still read, but only for where the row sits, never for whether it is alone.
+  //
+  // Two sources of focus, tracked apart: our own fields, and Square's card, which lives in a cross-origin
+  // iframe where document.activeElement is only ever the iframe itself. Each gets its own short grace period,
+  // so stepping from a field into the card, or between two fields, never flickers the sheet.
+  const typingIn = { field: false, card: false };
+  const releaseTimers = { field: null, card: null };
 
   // The sheet cannot be expanded and tucked at once: a keyboard means the parent is typing, not reading.
   function openSheet(open) {
@@ -1611,11 +1622,38 @@
   }
 
   function tuckSheet(on) {
-    clearTimeout(untuckTimer);
     const rail = $("rail");
     if (on) openSheet(false);
     rail.classList.toggle("tucked", on);
     liftSheet();
+  }
+
+  // The one place the sheet's state is decided: a focused input on the payment step, and nothing else.
+  function applyTuck() {
+    tuckSheet(onPaymentStep() && (typingIn.field || typingIn.card));
+  }
+
+  function focusGained(which) {
+    clearTimeout(releaseTimers[which]);
+    typingIn[which] = true;
+    applyTuck();
+  }
+
+  // Moving between two fields fires focusout then focusin, so each source waits a beat before admitting it has
+  // lost focus. Tracked per source, so the card taking focus from a field cannot strand the field's own flag.
+  function focusLost(which) {
+    clearTimeout(releaseTimers[which]);
+    releaseTimers[which] = setTimeout(() => {
+      typingIn[which] = false;
+      applyTuck();
+    }, UNTUCK_MS);
+  }
+
+  function forgetTyping() {
+    Object.keys(releaseTimers).forEach((which) => {
+      clearTimeout(releaseTimers[which]);
+      typingIn[which] = false;
+    });
   }
 
   // Sit on the floor of the visual viewport rather than the layout viewport. Zero while no keyboard is up,
@@ -1629,19 +1667,14 @@
     rail.style.transform = lift ? `translateY(-${lift}px)` : "";
   }
 
-  // Moving between two fields fires focusout then focusin, so the sheet waits a beat before coming back
-  // rather than flickering on every hop. A focus that lands anywhere cancels the pending restore.
-  function scheduleUntuck() {
-    clearTimeout(untuckTimer);
-    untuckTimer = setTimeout(() => tuckSheet(false), UNTUCK_MS);
-  }
-
   function typeable(node) {
     return Boolean(node && node.matches && node.matches("input, textarea, select"));
   }
 
   // The keyboard is up when the visual viewport is meaningfully shorter than the layout viewport. The slack
-  // absorbs the browser's own collapsing chrome, which is nowhere near the height of a keyboard.
+  // absorbs the browser's own collapsing chrome, which is nowhere near the height of a keyboard. Only ever
+  // asked about where a control sits, never about what the sheet shows: part-way through the keyboard's own
+  // animation this reads false with the keyboard plainly opening, which is exactly the trap above.
   function keyboardUp() {
     const view = window.visualViewport;
     return Boolean(view) && window.innerHeight - view.height > 120;
@@ -1672,30 +1705,24 @@
     const main = document.querySelector(".funnel-main");
     main.addEventListener("focusin", (event) => {
       if (!typeable(event.target)) return;
-      if (onPaymentStep()) tuckSheet(true);
+      focusGained("field");
       centerIfLowControl(event.target);
     });
     main.addEventListener("focusout", (event) => {
-      if (typeable(event.target)) scheduleUntuck();
+      if (typeable(event.target)) focusLost("field");
     });
     window.EncoreCard.onFocusChange(
       () => {
-        if (!onPaymentStep()) return;
-        tuckSheet(true);
-        centerOnFocus($("card-block"));
+        focusGained("card");
+        if (onPaymentStep()) centerOnFocus($("card-block"));
       },
-      () => scheduleUntuck()
+      () => focusLost("card")
     );
     if (window.visualViewport) {
-      // The keyboard going away is the one signal that outranks focus: iOS can dismiss it while leaving the
-      // field focused, and a sheet left tucked with no keyboard up is a sheet the parent cannot use.
-      const follow = () => {
-        if (!keyboardUp()) return tuckSheet(false);
-        liftSheet();
-      };
-      window.visualViewport.addEventListener("resize", follow);
-      // The viewport slides under a fixed element while the keyboard animates and while the page is scrolled
-      // with it open; following both keeps the sheet on the floor of what the parent can actually see.
+      // Both of these only move the row; neither decides what it shows. The viewport resizes as the keyboard
+      // animates and slides under a fixed element when the page is scrolled with it open, and following both
+      // keeps the row on the floor of what the parent can actually see for every frame of it.
+      window.visualViewport.addEventListener("resize", liftSheet);
       window.visualViewport.addEventListener("scroll", liftSheet);
     }
   }
