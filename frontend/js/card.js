@@ -44,21 +44,58 @@
     return state.loading;
   }
 
-  // What Square's style API will actually honour, which is far less than it accepts.
+  // What Square's style API will actually honour, which is less than it accepts: the validator takes a
+  // wider set of selectors and properties than the rendered iframe actually applies, so "no error thrown"
+  // is not proof a property did anything. Every line below was checked the only way that is conclusive:
+  // setting it to an impossible-to-miss color (red, magenta, green, cyan) on a live page against real
+  // Square and screenshotting the result. Re-verified against SDK v1.86.0 in sandbox:
   //
-  // Verified against SDK v1.86.0 in sandbox, by setting the input background to red and the text to
-  // green on a clean page and watching nothing change: `backgroundColor` and `color` are parsed,
-  // validated, and then ignored. `fontFamily` is validated hard enough to throw on a Google Font
-  // (web-safe only). So the inputs render on Square's white, and no amount of styling from here
-  // changes that: they live in a cross-origin iframe and this map is the only way in.
+  //   WORKS    .input-container borderColor, borderWidth
+  //   WORKS    .input-container.is-focus / .is-error borderColor (is-error loses to is-focus while the
+  //            field is actively focused, which is sensible precedence, not a bug: the error border
+  //            shows once the parent looks away, confirmed by blurring and re-screenshotting)
+  //   WORKS    input::placeholder color
+  //   WORKS    .message-text / .message-icon color, and their .is-error variants
+  //   WORKS    input fontFamily (validated hard enough to throw on a Google Font, so web-safe only),
+  //            fontSize
+  //   IGNORED  input backgroundColor, color — accepted, parsed, rendered as if absent every time
+  //   IGNORED  .input-container borderRadius — accepted, rendered with square corners every time
   //
-  // Only the properties that demonstrably do something are set. The card block around them is dressed
-  // in our own CSS to make the white panel read as deliberate rather than as a broken dark theme.
+  // The two IGNORED input properties are why the field is still white on dark: they live in a
+  // cross-origin iframe, and this map is the only way in. The card block around them is dressed in our
+  // own CSS to make the white panel read as deliberate rather than as a broken dark theme. The dead
+  // properties are left out entirely rather than set and silently doing nothing.
   function styles() {
     return {
       input: {
+        // Not var(--body)/Barlow: Square's own validator rejects any non-web-safe font here.
         fontFamily: "Helvetica, Arial, sans-serif",
         fontSize: "16px",
+      },
+      "input::placeholder": {
+        color: "#777777", // --gray
+      },
+      ".input-container": {
+        borderColor: "#2a3a50", // the border every .field input on this page uses
+        borderWidth: "1px",
+      },
+      ".input-container.is-focus": {
+        borderColor: "#1a74cc", // --blue-light: matches .field input:focus elsewhere on this page
+      },
+      ".input-container.is-error": {
+        borderColor: "#e5484d", // --danger
+      },
+      ".message-text": {
+        color: "#777777", // --gray
+      },
+      ".message-icon": {
+        color: "#777777", // --gray
+      },
+      ".message-text.is-error": {
+        color: "#e5484d", // --danger
+      },
+      ".message-icon.is-error": {
+        color: "#e5484d", // --danger
       },
     };
   }
