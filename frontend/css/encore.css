@@ -1832,8 +1832,16 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--blue-light);
+  /* Muted at rest on purpose: this sits on every BOOKED and ON HOLD card, a dozen of them against a
+     handful of scarce OPEN ones, and OPEN is the color that has to win the page. Only the hover state
+     (and focus, for the same reason via keyboard) borrows the brand blue, as a hint rather than a shout. */
+  color: var(--gray);
   text-decoration: underline;
+  text-decoration-color: var(--border);
+}
+.wk-card:hover .wk-notify, .wk-card:focus-visible .wk-notify {
+  color: var(--blue-light);
+  text-decoration-color: currentColor;
 }
 .wk-ask {
   display: flex;
