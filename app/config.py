@@ -25,12 +25,20 @@ class Settings(BaseSettings):
     session_secret: str = ""
     trust_proxy_headers: bool = False
     square_environment: Literal["sandbox", "production"] = "sandbox"
+    # The test-mode ribbon. Left unset it follows square_environment, so sandbox credentials can never be
+    # demoed without the notice, and going live cannot leave the notice up. Set it only to override that.
+    test_mode: bool | None = None
     square_access_token: str = ""
     square_location_id: str = ""
     square_webhook_signature_key: str = ""
     square_webhook_notification_url: str = ""
     # Local only: with no Square access token, checkout is a fake page that sends a signed webhook to ourselves.
     dev_fake_square: bool = False
+    # Cloudflare Turnstile on the Confirm action. Off by default: the funnel loads no Cloudflare script and
+    # skips verification entirely while this is false. The site key is public; the secret key never leaves here.
+    turnstile_enabled: bool = False
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
     # Twilio SMS. With any of these empty, messages are logged to the console instead of sent.
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
@@ -44,6 +52,10 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     email_from: str = ""
+
+    @property
+    def test_mode_enabled(self) -> bool:
+        return self.square_environment == "sandbox" if self.test_mode is None else self.test_mode
 
     @property
     def twilio_enabled(self) -> bool:

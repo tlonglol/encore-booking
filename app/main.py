@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
 from app.config import get_settings
-from app.routes import admin, availability, bookings, dev, holds, quote, requests, waitlist, webhooks
+from app.routes import admin, availability, bookings, config, dev, holds, quote, requests, waitlist, webhooks
 
 # The console fallback for SMS logs at INFO; uvicorn leaves application loggers at WARNING otherwise.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -20,9 +20,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[get_settings().frontend_origin],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    # PATCH is on the money path: the funnel saves the email on blur and mirrors the draft with it.
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type"],
 )
+app.include_router(config.router)
 app.include_router(quote.router)
 app.include_router(availability.router)
 app.include_router(holds.router)

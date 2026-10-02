@@ -40,7 +40,8 @@
   function placeBelowHeader() {
     if (!node) return;
     const header = document.querySelector(".banner, .nav");
-    node.style.top = `${(header ? header.getBoundingClientRect().height : 0) + 10}px`;
+    // The header's bottom edge, not its height: the test-mode ribbon sits above it and shifts it down.
+    node.style.top = `${(header ? header.getBoundingClientRect().bottom : 0) + 10}px`;
   }
 
   // seconds null means "a hold, but the server has not said how long is left yet".

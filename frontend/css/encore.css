@@ -1638,3 +1638,34 @@ body.has-pill { --pill-clear: 52px; }
 .hold-modal-body { padding: 1.5rem 1.4rem 1.4rem; display: grid; gap: 0.85rem; }
 .hold-modal-title { font-family: var(--display); font-weight: 400; font-size: 34px; letter-spacing: 0.04em; line-height: 1; }
 .hold-modal-text { font-size: 15px; color: var(--gray-light); }
+
+/* ── Test-mode ribbon: sticky above whichever header the page has, so it is never scrolled away ── */
+/* Both headers are sticky at top:0, so the ribbon pins above them and they pin below it. */
+:root { --ribbon-h: 0px; }
+body.has-ribbon { --ribbon-h: 30px; }
+.test-ribbon {
+  position: sticky;
+  top: 0;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ribbon-h);
+  padding: calc(env(safe-area-inset-top, 0px)) 0.75rem 0;
+  background: #3a2a05;
+  border-bottom: 1px solid #6b4f0a;
+  color: #ffd98a;
+  font-family: var(--condensed);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
+/* The headers carry the safe-area inset when they are the top of the page; the ribbon does it instead. */
+body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbon-h); }
+.ribbon-short { display: none; }
+@media (max-width: 560px) {
+  .ribbon-long { display: none; }
+  .ribbon-short { display: inline; }
+}
