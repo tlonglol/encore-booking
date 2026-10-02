@@ -18,7 +18,7 @@
 
   const firstDate = (group) => group[0].date;
   const lastDate = (group) => group[group.length - 1].date;
-  const available = (group) => group.some((day) => day.status === "open" || day.status === "request");
+  const available = (group) => group.some((day) => day.status === "open");
 
   function plural(n, word) {
     return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -51,7 +51,7 @@
       groups.forEach((group) => {
         if (taken.has(group)) return;
         group.forEach((day) => {
-          if (day.status !== "open" && day.status !== "request") return;
+          if (day.status !== "open") return;
           const distance = Math.abs(diffDays(day.date, birthday));
           if (!best || distance < best.distance) best = { group: group, day: day, distance: distance, after: day.date > birthday };
         });

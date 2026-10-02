@@ -34,7 +34,6 @@
     step: null,
     catalog: null,
     days: [],
-    weekendDefault: "open",
     weekends: null,
     maxWeekends: 52,
     loadingMore: false,
@@ -53,7 +52,6 @@
     pendingDelta: null,
     deltaTimer: null,
     dead: null,
-    done: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -101,10 +99,6 @@
 
   function kidsValue() {
     return draft.kids || cap();
-  }
-
-  function requesting() {
-    return draft.mode === "request";
   }
 
   function holding() {
@@ -196,7 +190,6 @@
     ui.popover = null;
     ui.policyOpen = false;
     save();
-    if (ui.done) return renderDone();
     if (step === "date") renderDate();
     else if (step === "plan") renderPlan();
     else if (step === "addons") renderAddons();
@@ -273,7 +266,7 @@
   // The payment step is the info step of a booking that takes a deposit. Same source of truth as the rail's
   // step highlight (ui.step): there is no second copy of the step logic.
   function onPaymentStep() {
-    return ui.step === "info" && !requesting();
+    return ui.step === "info";
   }
 
   const DELTA_MS = 1500;
@@ -420,10 +413,6 @@
     const button = $("advance");
     const note = $("rail-note");
     note.textContent = "";
-    if (ui.done) {
-      button.hidden = true;
-      return;
-    }
     button.hidden = false;
     renderPolicy();
     if (ui.step === "date") {
@@ -434,7 +423,7 @@
         : draft.package
         ? `Pick a date for ${pkg().label}`
         : "Pick a date";
-      note.textContent = ui.picked && ui.picked.status !== "request" ? "Confirming holds this date for 15 minutes." : "";
+      note.textContent = ui.picked ? "Confirming holds this date for 15 minutes." : "";
       return;
     }
     if (ui.step === "plan") {
@@ -444,19 +433,15 @@
     }
     if (ui.step === "addons") {
       button.disabled = !ui.quote;
-      button.textContent = requesting()
-        ? `Review request for ${shortDate(draft.date)}`
-        : `Lock in ${shortDate(draft.date)} (${money(ui.quote ? ui.quote.deposit_cents : 10000)} today)`;
+      button.textContent = `Lock in ${shortDate(draft.date)} (${money(ui.quote ? ui.quote.deposit_cents : 10000)} today)`;
       button.onclick = () => go("info");
       return;
     }
     button.disabled = ui.busy;
-    button.textContent = requesting() ? "Send request" : `Pay ${money(ui.quote ? ui.quote.deposit_cents : 10000)} & lock it in`;
+    button.textContent = `Pay ${money(ui.quote ? ui.quote.deposit_cents : 10000)} & lock it in`;
     renderPolicy();
     button.onclick = pay;
-    note.textContent = requesting()
-      ? "No payment now. Nothing is booked until we confirm with you."
-      : "Secure checkout by Square.";
+    note.textContent = "Secure checkout by Square.";
   }
 
   // ---------- helpers ----------
@@ -524,7 +509,7 @@
       day_label: draft.dayLabel,
       time_label: draft.timeLabel,
       slot_id: draft.slotId,
-      status: requesting() ? "request" : "open",
+      status: "open",
     };
   }
 
@@ -587,20 +572,6 @@
         el("button", {
           type: "button",
           class: "btn btn-ghost btn-block",
-          text: "Want a weekday? Tell us your date",
-          onclick: () => toggleAsk("weekday"),
-        }),
-        el("form", { class: "ask-form", id: "weekday-form", hidden: true, onsubmit: submitWeekday }, [
-          el("div", { class: "field" }, [
-            el("label", { for: "weekday-date", text: "Your date" }),
-            el("input", { id: "weekday-date", type: "date", required: true, min: ui.firstBookable || null }),
-          ]),
-          el("button", { type: "submit", class: "btn btn-primary", text: "Continue" }),
-          el("p", { class: "ask-error", id: "weekday-error", role: "alert" }),
-        ]),
-        el("button", {
-          type: "button",
-          class: "btn btn-ghost btn-block",
           text: "Don't see your date? Get notified",
           onclick: () => toggleAsk("waitlist"),
         }),
@@ -637,7 +608,6 @@
       return;
     }
     ui.days = data.days;
-    ui.weekendDefault = data.weekend_default;
     ui.weekends = data.weekends;
     ui.maxWeekends = data.max_weekends;
     ui.today = data.today;
@@ -675,8 +645,6 @@
       ui.weekends = Math.min(ui.maxWeekends, ui.weekends + Math.ceil(gap / 7) + 1);
       return loadGrid();
     }
-    const input = $("weekday-date");
-    if (input) input.min = data.first_bookable_date;
     if (ui.picked && ui.picked.slot_id) {
       const fresh = ui.days.find((d) => d.date === ui.picked.date);
       const mine = holding() && ui.picked.slot_id === draft.slotId;
@@ -716,9 +684,9 @@
   function dayCard(day, price, prefix) {
     const mine = holding() && day.slot_id === draft.slotId;
     const picked = Boolean(ui.picked) && ui.picked.date === day.date;
-    const tappable = mine || day.status === "open" || day.status === "request";
+    const tappable = mine || day.status === "open";
     const label = picked ? "Selected" : mine ? "Your date" : STATUS_TEXT[day.status];
-    const live = day.status === "open" || day.status === "request" || mine;
+    const live = day.status === "open" || mine;
     return el(
       "button",
       {
@@ -1109,19 +1077,6 @@
       go(afterDate());
       return;
     }
-    if (day.status === "request") {
-      draft.mode = "request";
-      draft.holdId = null;
-      draft.slotId = null;
-      draft.date = day.date;
-      draft.dayLabel = day.day_label;
-      draft.timeLabel = null;
-      draft.expiresAt = null;
-      ui.picked = null;
-      save();
-      go(afterDate());
-      return;
-    }
     if (ui.busy) return;
     ui.busy = true;
     const previous = holding() ? draft.holdId : null;
@@ -1434,7 +1389,7 @@
     save();
     stepRoot().replaceChildren(
       el("div", { class: "step-head" }, [
-        el("h1", { class: "step-title", text: requesting() ? "Send your request" : "Lock it in" }),
+        el("h1", { class: "step-title", text: "Lock it in" }),
       ]),
       el("form", { class: "form-grid", id: "pay-form", novalidate: true, onsubmit: (e) => e.preventDefault() }, [
         field("email", "Parent email", { type: "email", inputmode: "email", autocomplete: "email", placeholder: "you@email.com", value: saved.email, full: true }),
@@ -1442,7 +1397,6 @@
         field("phone", "Phone", { type: "tel", inputmode: "tel", autocomplete: "tel", placeholder: "(646) 000-0000", value: saved.phone }),
         field("kid_name", "Kid's name", { placeholder: "The birthday kid", value: saved.kidName }),
         field("kid_age", "Kid's age", { inputmode: "numeric", pattern: "[0-9]*", maxlength: "2", placeholder: "e.g. 9", value: saved.kidAge }),
-        requesting() ? timeField() : null,
       ]),
       el("div", { class: "pay-summary", id: "pay-summary" }),
       el("div", { id: "pay-error", role: "alert" })
@@ -1469,17 +1423,6 @@
         value: opts.value || null,
         required: true,
       }),
-    ]);
-  }
-
-  function timeField() {
-    const times = [["09:00", "9:00 AM"], ["10:00", "10:00 AM"], ["11:00", "11:00 AM"], ["12:00", "12:00 PM"],
-      ["13:00", "1:00 PM"], ["14:00", "2:00 PM"], ["15:00", "3:00 PM"], ["16:00", "4:00 PM"],
-      ["17:00", "5:00 PM"], ["18:00", "6:00 PM"], ["19:00", "7:00 PM"], ["20:00", "8:00 PM"]];
-    return el("div", { class: "field" }, [
-      el("label", { for: "preferred_time", text: "Preferred start time" }),
-      el("select", { id: "preferred_time", name: "preferred_time" },
-        times.map(([value, label]) => el("option", { value: value, text: label, selected: value === "16:00" ? "" : null }))),
     ]);
   }
 
@@ -1557,7 +1500,7 @@
     rememberForm();
     ui.busy = true;
     button.disabled = true;
-    button.textContent = requesting() ? "Sending…" : "Starting secure checkout…";
+    button.textContent = "Starting secure checkout…";
     const name = splitName(form.parentName);
     const body = {
       package: draft.package,
@@ -1571,18 +1514,9 @@
       kid_age: Number(form.kidAge),
       birthday: draft.birthday || null,
     };
-    const result = requesting()
-      ? await api("/api/requests", { method: "POST", body: { date: draft.date, preferred_time: $("preferred_time").value, ...body } })
-      : await api(`/api/holds/${draft.holdId}/checkout`, { method: "POST", body: body });
-    const { status, data } = result;
-    if (!requesting() && status === 200) {
+    const { status, data } = await api(`/api/holds/${draft.holdId}/checkout`, { method: "POST", body: body });
+    if (status === 200) {
       window.location.href = data.checkout_url;
-      return;
-    }
-    if (requesting() && status === 201) {
-      ui.done = data;
-      store(KEY, null);
-      render("info");
       return;
     }
     ui.busy = false;
@@ -1638,7 +1572,7 @@
   // The pill is a shell element shared with the rest of the site: the funnel owns the clock and hands it
   // the current state, so the timer never unmounts or resets on step navigation.
   function renderHoldHead() {
-    if (!draft.date || ui.done || !holdLive()) return window.EncoreHoldPill.hide();
+    if (!draft.date || !holdLive()) return window.EncoreHoldPill.hide();
     window.EncoreHoldPill.render({
       seconds: remainingSeconds(),
       dayLabel: draft.dayLabel,
@@ -1742,26 +1676,6 @@
     go("date");
   }
 
-  function renderDone() {
-    const data = ui.done;
-    renderHoldHead();
-    stepRoot().replaceChildren(
-      el("div", { class: "step-head" }, [
-        el("p", { class: "step-eyebrow", text: "Request sent" }),
-        el("h1", { class: "step-title", text: "We'll text you" }),
-      ]),
-      el("p", { class: "summary-line" }, [
-        el("b", { text: `${data.package_label} · ${data.day_label} at ${data.time_label}` }),
-        ` · ${data.kids} kids · `,
-        el("b", { text: money(data.total_cents) }),
-      ]),
-      el("p", { class: "step-sub", text: "No payment now, and nothing is booked yet. We'll text you back to confirm the date and time. Questions: (646) 203-8087." }),
-      el("a", { class: "btn btn-ghost", href: "/index.html", text: "Back to the party page" })
-    );
-    renderRail();
-    renderAdvance();
-  }
-
   // ---------- compare drawer ----------
   function openCompare(mode) {
     const body = $("compare-body");
@@ -1817,27 +1731,6 @@
   }
 
   // ---------- secondary asks ----------
-  function submitWeekday(event) {
-    event.preventDefault();
-    const error = $("weekday-error");
-    error.textContent = "";
-    const date = $("weekday-date").value;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return void (error.textContent = "Pick the date you have in mind.");
-    if (date < ui.firstBookable) return void (error.textContent = "That's too soon to book online. Call (646) 203-8087 and we'll see what we can do.");
-    if (date > shiftDate(ui.today, 366)) return void (error.textContent = "That's more than a year out. Check the year, or call (646) 203-8087.");
-    const listed = ui.days.find((d) => d.date === date);
-    if (listed && listed.status !== "request") {
-      if (listed.status === "open") selectDate(listed);
-      else error.textContent = `${listed.day_label} is ${listed.status === "booked" ? "booked" : "not available online"}. Call (646) 203-8087 if you need that date.`;
-      return;
-    }
-    if (!listed && isWeekendDate(date) && ui.weekendDefault === "open") {
-      error.textContent = "Weekends are booked online for the next 8 weekends. For a later weekend, call (646) 203-8087.";
-      return;
-    }
-    selectDate({ date: date, day_label: dayLabelFor(date), status: "request", slot_id: null, time_label: null });
-  }
-
   async function submitWaitlist(event) {
     event.preventDefault();
     const input = $("waitlist-email");

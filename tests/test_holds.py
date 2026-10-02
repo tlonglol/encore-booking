@@ -1,5 +1,5 @@
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -192,3 +192,32 @@ def test_get_booked_hold_exposes_no_contact_details(db: Session) -> None:
 def test_unknown_hold_is_404() -> None:
     assert client().get(f"/api/holds/{uuid.uuid4()}").status_code == 404
     assert client().get("/api/holds/not-a-uuid").status_code == 404
+
+
+def _grid_status(day: date) -> str:
+    days = client().get("/api/availability").json()["days"]
+    return next(entry["status"] for entry in days if entry["date"] == day.isoformat())
+
+
+def test_lapsed_hold_frees_the_date_on_the_grid(db: Session) -> None:
+    """What the next parent sees: a hold that ran out stops holding the date."""
+    day = next_saturday(7)
+    slot = make_slot(db, day)
+    hold = make_hold(db, slot)
+    assert _grid_status(day) == "held"
+    hold.expires_at = hold.expires_at - timedelta(minutes=16)
+    db.commit()
+    assert _grid_status(day) == "open"
+
+
+def test_swapping_dates_frees_the_one_left_behind(db: Session) -> None:
+    saturday = next_saturday(7)
+    sunday = saturday + timedelta(days=1)
+    first_slot = make_slot(db, saturday)
+    second_slot = make_slot(db, sunday)
+    funnel = client_from("192.0.2.14")
+    first = start_hold(funnel, first_slot.id).json()["hold_id"]
+    assert _grid_status(saturday) == "held"
+    assert start_hold(funnel, second_slot.id, replace_hold_id=first).status_code == 201
+    assert _grid_status(saturday) == "open"
+    assert _grid_status(sunday) == "held"
