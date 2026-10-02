@@ -1143,9 +1143,11 @@
     ui.busy = true;
     const pointer = kept(HOLD_KEY);
     const previous = (pointer && pointer.holdId) || (holding() ? draft.holdId : null);
+    // Resolves to null while Turnstile is off, which is the default and what the server expects.
+    const turnstileToken = await window.EncoreTurnstile.token();
     const { status, data } = await api("/api/holds", {
       method: "POST",
-      body: { slot_id: day.slot_id, replace_hold_id: previous },
+      body: { slot_id: day.slot_id, replace_hold_id: previous, turnstile_token: turnstileToken },
     });
     ui.busy = false;
     if (status === 201) {
@@ -1173,6 +1175,7 @@
     }
     if (status === 429 && data && data.expires_at) {
       const until = new Date(data.expires_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      await loadGrid();
       notice(`${detailText(data)} Try again after ${until}.`, [], true);
       return;
     }

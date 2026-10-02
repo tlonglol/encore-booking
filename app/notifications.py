@@ -193,6 +193,56 @@ def owner_refund_settled_text(booking: Booking, amount_cents: int, status: str) 
     )
 
 
+def owner_hold_spike_text(count: int, client_ip: str | None) -> str:
+    return (
+        f"HEADS UP: {count} dates held in the last hour from one visitor with no payment. "
+        f"Nothing is blocked and no date is lost; the holds lapse in 15 minutes each. "
+        f"{f'Source {client_ip}. ' if client_ip else ''}Worth a look in admin."
+    )
+
+
+def notify_hold_spike(
+    db: Session, settings: Settings, hold_id: uuid.UUID, count: int, client_ip: str | None
+) -> None:
+    """Best-effort and at most once an hour, so a visitor holding twenty dates produces one message rather
+    than ten. Never raises: a hold is not failed over a notification."""
+    try:
+        recent = db.execute(
+            text(
+                "SELECT count(*) FROM notifications"
+                " WHERE event = 'hold_spike' AND created_at > now() - interval '1 hour'"
+            )
+        ).scalar_one()
+        if recent:
+            return
+        messages = _owner_messages(settings, owner_hold_spike_text(count, client_ip), event="hold_spike")
+    except Exception:
+        log.exception("Could not build hold spike notification")
+        db.rollback()
+        return
+    log.warning("Hold spike: %s unpaid holds in the last hour from %s", count, client_ip or "unknown")
+    for message in messages:
+        try:
+            notification_id = _claim(db, message, hold_id=hold_id)
+        except Exception:
+            log.exception("Could not record hold spike notification")
+            db.rollback()
+            continue
+        if notification_id is None:
+            continue
+        try:
+            status, provider_id = _deliver(settings, message)
+            _record(db, notification_id, status, provider_id, None)
+        except Exception as error:
+            log.warning("owner hold spike notification failed: %s", error)
+            db.rollback()
+            try:
+                _record(db, notification_id, "failed", None, str(error)[:500])
+            except Exception:
+                log.exception("Could not record notification failure")
+                db.rollback()
+
+
 def owner_late_payment_text(hold: Hold, starts_at: datetime) -> str:
     return (
         f"PAYMENT ON EXPIRED HOLD, call parent: {PACKAGES[hold.package].label} {when(starts_at)}, {hold.kids} kids. "

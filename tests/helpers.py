@@ -135,6 +135,12 @@ def client_from(ip: str) -> TestClient:
     return TestClient(app, base_url="https://testserver", client=(ip, 50000))
 
 
+def browser_from(ip: str) -> TestClient:
+    """A separate browser at the same address. Each TestClient keeps its own cookie jar, so each one gets
+    its own anonymous session, which is what several people behind one mobile network look like."""
+    return client_from(ip)
+
+
 WEBHOOK_KEY = "test-signature-key"
 WEBHOOK_URL = "https://encore-test.example.com/api/webhooks/square"
 

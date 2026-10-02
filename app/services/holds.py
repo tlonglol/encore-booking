@@ -1,7 +1,7 @@
 import ipaddress
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import phonenumbers
 from psycopg.errors import UniqueViolation
@@ -17,6 +17,10 @@ BIRTHDAY_HORIZON_DAYS = 366
 HOLD_MINUTES = 15
 MAX_ACTIVE_HOLDS_PER_IP = 5
 SLOT_INDEX = "holds_one_active_per_slot"
+# Two lapsed, unpaid holds on one date is a parent who has stopped deciding and started sitting on it.
+COOLDOWN_AFTER_EXPIRIES = 2
+# More than this many holds in an hour from one client, with nothing paid, is worth the owner hearing about.
+SPIKE_HOLDS_PER_HOUR = 10
 
 # Advisory lock namespaces, always taken in this order so two checkout requests cannot deadlock.
 LOCK_PHONE, LOCK_EMAIL, LOCK_IP = 1, 2, 3
@@ -46,6 +50,18 @@ class HoldLimitReached(Exception):
     def __init__(self, reason: str, expires_at: datetime) -> None:
         super().__init__(reason)
         self.expires_at = expires_at
+
+
+class DateCoolingDown(Exception):
+    """Two lapsed holds on this date from this browser. The date is open; this browser has to wait."""
+
+    def __init__(self, until: datetime) -> None:
+        super().__init__("cooling down")
+        self.until = until
+
+
+class TurnstileFailed(Exception):
+    """Only reachable while TURNSTILE_ENABLED is on, which it is not by default."""
 
 
 @dataclass(frozen=True)
@@ -109,11 +125,72 @@ def _enforce_ip_cap(db: Session, client_ip: str | None) -> None:
         raise HoldLimitReached("Too many dates on hold from this network.", row.soonest)
 
 
+def _enforce_creation_rate(db: Session, client_ip: str | None, per_hour: int) -> None:
+    """A rolling hour of hold creations per IP.
+
+    A hold swapped away by the same browser does not count. Swapping releases the old date in the same
+    transaction, so it locks nothing and costs nobody anything; counting it would mean a parent who changed
+    their mind five times was locked out for an hour, which is the opposite of the point. What this counts
+    is distinct dates a client actually sat on.
+    """
+    if client_ip is None:
+        return
+    held = db.execute(
+        text(
+            "SELECT count(*) FROM holds"
+            " WHERE client_ip = CAST(:ip AS inet) AND created_at > now() - interval '1 hour'"
+            " AND status <> 'cancelled'"
+        ),
+        {"ip": client_ip},
+    ).scalar_one()
+    if held >= per_hour:
+        raise HoldLimitReached(
+            "That's a lot of dates from this network in the last hour. Give it a few minutes, or call"
+            " (646) 203-8087 and we'll sort it out.",
+            db.scalar(select(func.now() + timedelta(hours=1))),
+        )
+
+
+def _enforce_date_cooldown(db: Session, session_id: str | None, slot_id: int, minutes: int) -> None:
+    """After two consecutive lapsed, unpaid holds on one date, this browser waits before taking it again.
+
+    Consecutive and per date on purpose: one expiry followed by a Re-hold is the expiry modal's normal
+    path and is untouched, and holds on other dates are not what this is about.
+    """
+    if session_id is None:
+        return
+    recent = db.execute(
+        text(
+            """
+            SELECT h.status, h.expires_at FROM holds h
+            WHERE h.session_id = :session_id AND h.slot_id = :slot_id
+              AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = h.id)
+            ORDER BY h.created_at DESC LIMIT :limit
+            """
+        ),
+        {"session_id": session_id, "slot_id": slot_id, "limit": COOLDOWN_AFTER_EXPIRIES},
+    ).all()
+    lapsed = [row for row in recent if row.status == "expired" or row.expires_at <= datetime.now(UTC)]
+    if len(lapsed) < COOLDOWN_AFTER_EXPIRIES or len(recent) < COOLDOWN_AFTER_EXPIRIES:
+        return
+    until = max(row.expires_at for row in lapsed) + timedelta(minutes=minutes)
+    if until > datetime.now(UTC):
+        raise DateCoolingDown(until)
+
+
 def create_hold(
-    db: Session, slot_id: int, client_ip: str | None, replace_hold_id: uuid.UUID | None, today: date, min_lead_days: int
+    db: Session,
+    slot_id: int,
+    client_ip: str | None,
+    replace_hold_id: uuid.UUID | None,
+    today: date,
+    min_lead_days: int,
+    session_id: str | None = None,
+    rate_per_hour: int = MAX_ACTIVE_HOLDS_PER_IP,
+    cooldown_minutes: int = 45,
 ) -> Hold:
-    """One transaction: lock the slot, expire its stale hold, swap out the caller's old hold, check the IP cap,
-    insert. The unique index picks the winner. No contact details yet; those arrive at checkout."""
+    """One transaction: lock the slot, expire its stale hold, swap out this browser's old hold, check the
+    caps, insert. The unique index picks the winner. No contact details yet; those arrive at checkout."""
     slot = db.execute(
         text("SELECT id, local_date, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": slot_id}
     ).one_or_none()
@@ -134,6 +211,16 @@ def create_hold(
         ),
         {"id": slot_id},
     )
+    # One browser, one date. The client's replace_hold_id is still honoured, but the session is what makes
+    # this a guarantee: a second tab, or a tab that lost its pointer, swaps rather than stacking.
+    if session_id is not None:
+        db.execute(
+            text(
+                "UPDATE holds SET status = 'cancelled', updated_at = now()"
+                " WHERE session_id = :session_id AND status = 'pending_payment'"
+            ),
+            {"session_id": session_id},
+        )
     if replace_hold_id is not None:
         db.execute(
             text(
@@ -143,8 +230,10 @@ def create_hold(
             {"id": replace_hold_id},
         )
     try:
+        _enforce_date_cooldown(db, session_id, slot_id, cooldown_minutes)
+        _enforce_creation_rate(db, client_ip, rate_per_hour)
         _enforce_ip_cap(db, client_ip)
-    except HoldLimitReached:
+    except (HoldLimitReached, DateCoolingDown):
         db.rollback()
         raise
 
@@ -154,6 +243,7 @@ def create_hold(
         expires_at=func.now() + timedelta(minutes=HOLD_MINUTES),
         deposit_cents=10000,
         client_ip=client_ip,
+        session_id=session_id,
     )
     db.add(hold)
     try:
@@ -318,3 +408,24 @@ def attach_payment_link(db: Session, hold: Hold, link_id: str, url: str, order_i
     hold.checkout_url = url
     hold.square_order_id = order_id
     db.commit()
+
+
+def recent_unpaid_holds(db: Session, session_id: str | None, client_ip: str | None) -> int:
+    """How many holds this client has created in the last hour with nothing paid for.
+
+    A notice, not a block: the caps above do the blocking. This is the number that tells the owner someone
+    is working through the calendar rather than booking a party.
+    """
+    if session_id is None and client_ip is None:
+        return 0
+    return db.execute(
+        text(
+            """
+            SELECT count(*) FROM holds h
+            WHERE h.created_at > now() - interval '1 hour'
+              AND (h.session_id = :session_id OR h.client_ip = CAST(:ip AS inet))
+              AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = h.id)
+            """
+        ),
+        {"session_id": session_id, "ip": client_ip},
+    ).scalar_one()

@@ -23,8 +23,11 @@ from app.schemas import (
     SlotInfo,
 )
 from app.models import Slot
+from app.notifications import notify_hold_spike
 from app.services.holds import (
     CheckoutInput,
+    DateCoolingDown,
+    SPIKE_HOLDS_PER_HOUR,
     draft_hold,
     HoldLimitReached,
     HoldNotPending,
@@ -36,8 +39,10 @@ from app.services.holds import (
     create_hold,
     hold_state,
     normalize_ip,
+    recent_unpaid_holds,
     save_email,
 )
+from app.services.turnstile import verify as turnstile_verify
 from app.services.slots import open_alternatives
 from app.services.square import SquareError, create_deposit_link
 from app.timeutil import format_date, format_day, format_time, venue_today
@@ -76,9 +81,21 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
             status_code=422,
             detail="Dates are request-only right now. Send a request and we'll text you back.",
         )
+    ip = client_ip(request)
+    if not turnstile_verify(settings, body.turnstile_token, ip):
+        raise HTTPException(status_code=403, detail="We couldn't verify that request. Refresh and try again.")
+    session_id = getattr(request.state, "session_id", None)
     try:
         hold = create_hold(
-            db, body.slot_id, client_ip(request), body.replace_hold_id, venue_today(datetime.now(UTC)), settings.min_lead_days
+            db,
+            body.slot_id,
+            ip,
+            body.replace_hold_id,
+            venue_today(datetime.now(UTC)),
+            settings.min_lead_days,
+            session_id=session_id,
+            rate_per_hour=settings.hold_rate_per_hour,
+            cooldown_minutes=settings.hold_cooldown_minutes,
         )
     except SlotNotFound as error:
         raise HTTPException(status_code=404, detail="That date is not available") from error
@@ -91,11 +108,24 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
             status_code=409,
             content={"detail": "That date was just taken.", "alternatives": _alternatives(db)},
         )
+    except DateCoolingDown as error:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "You've let this date go twice already. Give it a few minutes, or call"
+                " (646) 203-8087 and we'll hold it for you.",
+                "expires_at": error.until.isoformat(),
+            },
+        )
     except HoldLimitReached as error:
         return JSONResponse(
             status_code=429,
             content={"detail": str(error), "expires_at": error.expires_at.isoformat()},
         )
+    # A notice, never a block: the caps above did the blocking, and the hold just made is a real one.
+    unpaid = recent_unpaid_holds(db, session_id, ip)
+    if unpaid > SPIKE_HOLDS_PER_HOUR:
+        notify_hold_spike(db, settings, hold.id, unpaid, ip)
     slot = db.get(Slot, hold.slot_id)
     assert slot is not None
     return HoldCreatedOut(

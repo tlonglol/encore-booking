@@ -36,6 +36,8 @@ class HoldRequest(BaseModel):
 
     slot_id: int
     replace_hold_id: UUID | None = None
+    # Only read while TURNSTILE_ENABLED is on, which it is not by default.
+    turnstile_token: str | None = None
 
 
 class HoldCreatedOut(BaseModel):

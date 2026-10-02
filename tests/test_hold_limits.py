@@ -4,28 +4,29 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from tests.helpers import checkout, client_from, make_hold, make_slot, next_saturday, start_hold, today
+from tests.helpers import browser_from, checkout, client_from, make_hold, make_slot, next_saturday, start_hold, today
 
 
 def test_sixth_hold_from_one_ip_returns_429(db: Session) -> None:
+    """Five separate browsers behind one IP, which is what a mobile network looks like. One browser cannot
+    reach this cap at all any more: its sixth hold swaps its fifth rather than adding to it."""
     slots = [make_slot(db, next_saturday(7 * week)) for week in range(1, 7)]
-    client = client_from("198.51.100.10")
-    created = [start_hold(client, slot.id) for slot in slots[:5]]
+    created = [start_hold(browser_from("198.51.100.10"), slot.id) for slot in slots[:5]]
     assert [r.status_code for r in created] == [201] * 5
-    response = start_hold(client, slots[5].id)
+    response = start_hold(browser_from("198.51.100.10"), slots[5].id)
     assert response.status_code == 429
     assert "network" in response.json()["detail"]
-    assert response.json()["expires_at"] == min(r.json()["expires_at"] for r in created).replace("Z", "+00:00")
 
 
 def test_checkout_with_a_phone_already_holding_returns_429(db: Session) -> None:
+    """Two browsers, one person: the contact cap is what catches them, since the session swap cannot."""
     first = make_slot(db, next_saturday(7))
     second = make_slot(db, next_saturday(14))
-    client = client_from("198.51.100.7")
-    held = start_hold(client, first.id)
-    assert checkout(client, held.json()["hold_id"], 1).status_code == 200
-    other = start_hold(client, second.id).json()["hold_id"]
-    response = checkout(client, other, 2, phone="914.555.0001")
+    one, two = browser_from("198.51.100.7"), browser_from("198.51.100.7")
+    held = start_hold(one, first.id)
+    assert checkout(one, held.json()["hold_id"], 1).status_code == 200
+    other = start_hold(two, second.id).json()["hold_id"]
+    response = checkout(two, other, 2, phone="914.555.0001")
     assert response.status_code == 429
     assert "phone" in response.json()["detail"]
     assert response.json()["expires_at"] == held.json()["expires_at"].replace("Z", "+00:00")
@@ -34,10 +35,10 @@ def test_checkout_with_a_phone_already_holding_returns_429(db: Session) -> None:
 def test_checkout_with_an_email_already_holding_returns_429(db: Session) -> None:
     first = make_slot(db, next_saturday(7))
     second = make_slot(db, next_saturday(14))
-    client = client_from("198.51.100.9")
-    assert checkout(client, start_hold(client, first.id).json()["hold_id"], 1).status_code == 200
-    other = start_hold(client, second.id).json()["hold_id"]
-    response = checkout(client, other, 2, email="PARENT1@example.com")
+    one, two = browser_from("198.51.100.9"), browser_from("198.51.100.9")
+    assert checkout(one, start_hold(one, first.id).json()["hold_id"], 1).status_code == 200
+    other = start_hold(two, second.id).json()["hold_id"]
+    response = checkout(two, other, 2, email="PARENT1@example.com")
     assert response.status_code == 429
     assert "email" in response.json()["detail"]
 
@@ -51,9 +52,8 @@ def test_hold_inside_lead_time_is_rejected(db: Session) -> None:
 
 def test_spoofed_forwarded_for_does_not_bypass_ip_cap(db: Session) -> None:
     slots = [make_slot(db, next_saturday(7 * week)) for week in range(1, 7)]
-    client = client_from("198.51.100.11")
     for n, slot in enumerate(slots):
-        response = client.post(
+        response = browser_from("198.51.100.11").post(
             "/api/holds", json={"slot_id": slot.id}, headers={"X-Forwarded-For": f"10.0.0.{n}"}
         )
     assert response.status_code == 429

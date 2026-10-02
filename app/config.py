@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     refund_daily_cap: int = 3
     # The demo reset deletes bookings, so it stays off unless someone deliberately turns it on.
     demo_reset_enabled: bool = False
+    # Holds cost nothing to make and lock revenue, so creation is capped per IP per rolling hour, and a
+    # browser that lets two holds lapse on one date waits before taking that date again.
+    hold_rate_per_hour: int = 5
+    hold_cooldown_minutes: int = 45
     admin_password: str = ""
     session_secret: str = ""
     trust_proxy_headers: bool = False

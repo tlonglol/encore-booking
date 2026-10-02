@@ -1752,3 +1752,6 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
 @media (max-width: 560px) {
   .manage-dates { grid-template-columns: 1fr; }
 }
+
+/* Turnstile's own widget host. Only ever populated while TURNSTILE_ENABLED is on. */
+.turnstile-host { position: fixed; bottom: 0; left: 0; z-index: 200; }

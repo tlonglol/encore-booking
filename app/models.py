@@ -30,6 +30,7 @@ NOTIFICATION_EVENTS = (
     "rescheduled",
     "addons_changed",
     "refunded",
+    "hold_spike",
     "request",
 )
 # Webhook-driven notices must survive Square redelivering the same event. The rest arrive on a single
@@ -99,6 +100,21 @@ class Hold(Base):
         Index("holds_pending_phone", "phone", postgresql_where=text("status = 'pending_payment'")),
         Index("holds_pending_email", "email", postgresql_where=text("status = 'pending_payment'")),
         Index("holds_pending_client_ip", "client_ip", postgresql_where=text("status = 'pending_payment'")),
+        # One browser, one date: the swap looks a session's live hold up on every creation.
+        Index(
+            "holds_session_active",
+            "session_id",
+            postgresql_where=text("session_id IS NOT NULL AND status = 'pending_payment'"),
+        ),
+        # The per-date cooldown asks what this session did to this slot, and when.
+        Index(
+            "holds_session_slot",
+            "session_id",
+            "slot_id",
+            "expires_at",
+            postgresql_where=text("session_id IS NOT NULL"),
+        ),
+        Index("holds_client_ip_created", "client_ip", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -123,6 +139,9 @@ class Hold(Base):
     birthday: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
     client_ip: Mapped[str | None] = mapped_column(INET)
+    # The browser that made this hold, from an anonymous cookie. It is what makes "one hold per browser" a
+    # server-side guarantee rather than something the client has to remember to ask for.
+    session_id: Mapped[str | None] = mapped_column(Text)
     square_order_id: Mapped[str | None] = mapped_column(Text)
     square_payment_link_id: Mapped[str | None] = mapped_column(Text)
     checkout_url: Mapped[str | None] = mapped_column(Text)
