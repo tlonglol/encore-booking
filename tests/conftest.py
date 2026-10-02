@@ -105,6 +105,7 @@ class FakeSquareApi:
     def __init__(self) -> None:
         self.requests: list[dict[str, object]] = []
         self.fail_with: int | None = None
+        self.refund_status = "PENDING"
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
@@ -112,6 +113,19 @@ class FakeSquareApi:
         if self.fail_with:
             return httpx.Response(self.fail_with, json={"errors": [{"code": "INTERNAL_SERVER_ERROR"}]})
         key = body["idempotency_key"]
+        if request.url.path == "/v2/refunds":
+            # Square answers PENDING for a card refund it has accepted; its webhook settles it later.
+            return httpx.Response(
+                200,
+                json={
+                    "refund": {
+                        "id": f"refund-{key}",
+                        "status": self.refund_status,
+                        "amount_money": body["amount_money"],
+                        "payment_id": body["payment_id"],
+                    }
+                },
+            )
         return httpx.Response(
             200,
             json={

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Time,
     CheckConstraint,
     Date,
@@ -21,11 +22,24 @@ from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 HOLD_STATUSES = ("pending_payment", "booked", "paid_after_expiry", "expired", "cancelled")
+REFUND_STATUSES = ("pending_approval", "pending", "completed", "failed", "rejected")
+NOTIFICATION_EVENTS = ("booked", "late_payment", "cancelled", "rescheduled", "addons_changed", "request")
+# A booking notice must survive Square redelivering the same event; the rest are single parent requests.
+CLAIMED_ONCE_EVENTS = ("booked", "late_payment")
 ACTIVE_HOLD_STATUSES = ("pending_payment", "booked")
 PACKAGES = ("standard", "plus", "premium")
 REQUEST_STATUSES = ("new", "approved", "declined", "expired", "converted")
 FLAG_KINDS = ("paid_after_expiry", "amount_mismatch", "unmatched_order", "duplicate_payment")
-EVENT_OUTCOMES = ("booked", "duplicate", "duplicate_payment", "expired_hold", "unmatched", "amount_mismatch")
+EVENT_OUTCOMES = (
+    "booked",
+    "duplicate",
+    "duplicate_payment",
+    "expired_hold",
+    "unmatched",
+    "amount_mismatch",
+    "refund_settled",
+    "refund_unmatched",
+)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -114,6 +128,9 @@ class Booking(Base):
     __table_args__ = (
         CheckConstraint(_in("package", PACKAGES), name="bookings_package_valid"),
         CheckConstraint("kids BETWEEN 1 AND 30", name="bookings_kids_range"),
+        CheckConstraint(
+            "cancel_source IS NULL OR cancel_source IN ('parent', 'owner')", name="bookings_cancel_source_valid"
+        ),
         # Second, independent guard: at most one live booking per slot.
         Index(
             "bookings_one_live_per_slot",
@@ -149,8 +166,13 @@ class Booking(Base):
     paid_amount_cents: Mapped[int] = mapped_column(Integer)
     event_starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Every move, for the owner's benefit; the courtesy flag is the one promise the rules actually spend.
+    reschedule_count: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    rescheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    courtesy_reschedule_used: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    cancel_source: Mapped[str | None] = mapped_column(Text)
 
 
 class PartyRequest(Base):
@@ -223,6 +245,7 @@ class SquareEvent(Base):
     event_type: Mapped[str] = mapped_column(Text)
     payment_id: Mapped[str | None] = mapped_column(Text)
     order_id: Mapped[str | None] = mapped_column(Text)
+    refund_id: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[str] = mapped_column(Text)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -242,6 +265,40 @@ class PaymentFlag(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class Refund(Base):
+    """One deposit refund. Written before Square is called, so a refund that never reaches Square is visible
+    rather than lost, and settled by Square's refund webhook afterwards."""
+
+    __tablename__ = "refunds"
+    __table_args__ = (
+        CheckConstraint(_in("status", REFUND_STATUSES), name="refunds_status_valid"),
+        CheckConstraint("amount_cents > 0", name="refunds_amount_positive"),
+        # One deposit, one refund: both the daily cap and the webhook rely on this.
+        Index("refunds_one_per_booking", "booking_id", unique=True),
+        Index(
+            "refunds_square_refund_id_key",
+            "square_refund_id",
+            unique=True,
+            postgresql_where=text("square_refund_id IS NOT NULL"),
+        ),
+        Index("refunds_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    booking_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bookings.id"))
+    square_payment_id: Mapped[str] = mapped_column(Text)
+    square_refund_id: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(Text)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text)
+    # Why it is waiting for the owner instead of having been sent: the daily cap, or a repeat-canceller flag.
+    queued_reason: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
@@ -250,8 +307,18 @@ class Notification(Base):
         CheckConstraint(
             "status IN ('pending', 'sent', 'failed', 'logged')", name="notifications_status_valid"
         ),
-        # A hold's or request's outcome is announced at most once per audience and channel.
-        Index("notifications_once_per_hold", "hold_id", "audience", "channel", unique=True),
+        CheckConstraint(_in("event", NOTIFICATION_EVENTS), name="notifications_event_valid"),
+        # A webhook-driven outcome is announced at most once per audience and channel however many times
+        # Square redelivers it. Parent-driven notices (a cancellation, a move, an add-on) are single requests
+        # that can legitimately happen more than once per hold, so they are recorded rather than claimed.
+        Index(
+            "notifications_once_per_hold",
+            "hold_id",
+            "audience",
+            "channel",
+            unique=True,
+            postgresql_where=text(_in("event", CLAIMED_ONCE_EVENTS)),
+        ),
         Index(
             "notifications_once_per_request",
             "request_id",
@@ -269,6 +336,7 @@ class Notification(Base):
     booking_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("bookings.id"))
     audience: Mapped[str] = mapped_column(Text)
     channel: Mapped[str] = mapped_column(Text)
+    event: Mapped[str] = mapped_column(Text, server_default=text("'booked'"))
     recipient: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)

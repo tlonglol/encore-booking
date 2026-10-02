@@ -1669,3 +1669,86 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   .ribbon-long { display: none; }
   .ribbon-short { display: inline; }
 }
+
+/* ── Manage page: three plain panels, in the same card family as the rest of the site ── */
+.manage-card {
+  margin: 0 0 1rem;
+  padding: 1.15rem 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+}
+.manage-card h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--condensed);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+.manage-card p { margin: 0 0 0.9rem; }
+.manage-card p:last-child { margin-bottom: 0; }
+/* The cancel confirmation is the one place the page raises its voice, and only once asked. */
+.manage-card-warn { border-color: var(--border-blue); background: var(--card2); }
+.manage-rows { display: grid; gap: 0.1rem; margin-bottom: 1rem; }
+.manage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.manage-row:last-child { border-bottom: 0; }
+.manage-row-name { font-size: 15px; color: var(--white); }
+.manage-price { font-size: 13px; color: var(--gray); font-variant-numeric: tabular-nums; }
+.manage-stepper { display: flex; align-items: center; gap: 0.6rem; flex: none; }
+.manage-stepper .step {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card2);
+  color: var(--gray-light);
+  line-height: 1;
+}
+.manage-stepper .step:hover { border-color: var(--blue); color: var(--white); }
+.manage-stepper .step-value { min-width: 1.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+.manage-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.manage-dates { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+.manage-date {
+  padding: 0.7rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card2);
+  color: var(--white);
+  font-family: var(--condensed);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.manage-date:hover { border-color: var(--blue); }
+.manage-error:not(:empty) {
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-blue);
+  border-radius: 6px;
+  background: var(--card2);
+  color: var(--gray-light);
+  font-size: 14px;
+  text-align: left;
+}
+.manage-flash {
+  margin: 1rem auto 0;
+  color: var(--blue-light);
+  font-family: var(--condensed);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+@media (max-width: 560px) {
+  .manage-dates { grid-template-columns: 1fr; }
+}

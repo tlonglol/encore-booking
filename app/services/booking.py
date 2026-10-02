@@ -3,6 +3,7 @@ import logging
 import secrets
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import Booking, Hold, PaymentFlag, Slot, SquareEvent
+from app.services.refunds import settle_from_webhook
 from app.services.square import signature_valid
 
 CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -33,11 +35,23 @@ class PaymentEvent:
 
 
 @dataclass(frozen=True)
+class RefundEvent:
+    event_id: str
+    event_type: str
+    refund_id: str
+    payment_id: str | None
+    status: str
+    updated_at: datetime | None
+
+
+@dataclass(frozen=True)
 class WebhookResult:
     status_code: int
     outcome: str
     hold_id: uuid.UUID | None = None
     booking_id: int | None = None
+    # Set for a refund that settled, so the caller knows there is a parent to tell.
+    refund_booking_id: int | None = None
 
 
 def new_confirmation_code() -> str:
@@ -69,6 +83,64 @@ def parse_payment_event(event: Any) -> PaymentEvent | None:
         amount_cents=amount if isinstance(amount, int) else None,
         currency=money.get("currency"),
     )
+
+
+def parse_refund_event(event: Any) -> RefundEvent | None:
+    """Square nests the refund at data.object.refund on refund.created and refund.updated (docs 2026-10-02)."""
+    if not isinstance(event, dict):
+        return None
+    event_type = event.get("type")
+    refund = ((event.get("data") or {}).get("object") or {}).get("refund")
+    if not isinstance(event_type, str) or not event_type.startswith("refund."):
+        return None
+    if not isinstance(refund, dict) or not event.get("event_id") or not refund.get("id"):
+        return None
+    return RefundEvent(
+        event_id=str(event["event_id"]),
+        event_type=event_type,
+        refund_id=str(refund["id"]),
+        payment_id=refund.get("payment_id"),
+        status=str(refund.get("status", "")),
+        updated_at=_parse_time(refund.get("updated_at")),
+    )
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def process_refund_event(db: Session, event: RefundEvent) -> WebhookResult:
+    """Same shape as a payment event: claim the event id first, then act, then commit. Square's refund
+    webhook is the authority on whether the money actually left the account."""
+    claimed = db.execute(
+        insert(SquareEvent)
+        .values(
+            event_id=event.event_id,
+            event_type=event.event_type,
+            payment_id=event.payment_id,
+            refund_id=event.refund_id,
+            outcome="duplicate",
+        )
+        .on_conflict_do_nothing(index_elements=["event_id"])
+        .returning(SquareEvent.event_id)
+    ).scalar_one_or_none()
+    if claimed is None:
+        db.rollback()
+        return WebhookResult(200, "duplicate")
+    booking_id = settle_from_webhook(db, event.refund_id, event.status, event.updated_at)
+    outcome = "refund_settled" if booking_id is not None else "refund_unmatched"
+    db.execute(
+        text("UPDATE square_events SET outcome = :outcome WHERE event_id = :id"),
+        {"outcome": outcome, "id": event.event_id},
+    )
+    db.commit()
+    log.info("Square refund event %s outcome=%s status=%s", event.event_id, outcome, event.status)
+    return WebhookResult(200, outcome, refund_booking_id=booking_id if event.status == "COMPLETED" else None)
 
 
 def _recorded_hold(db: Session, payment_id: str) -> tuple[bool, uuid.UUID | None]:
@@ -200,6 +272,9 @@ def handle_square_webhook(db: Session, settings: Settings, raw_body: bytes, sign
         body = json.loads(raw_body)
     except ValueError:
         return WebhookResult(400, "malformed")
+    refund = parse_refund_event(body)
+    if refund is not None:
+        return process_refund_event(db, refund)
     event = parse_payment_event(body)
     if event is None or event.status != "COMPLETED":
         return WebhookResult(200, "ignored")

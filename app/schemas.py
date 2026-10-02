@@ -131,6 +131,19 @@ class BookingOut(BaseModel):
     party: PartyDetails
 
 
+class ManageWhatYouCanDo(BaseModel):
+    """What the manage page may offer, and the one plain line explaining anything it may not."""
+
+    can_cancel: bool
+    can_reschedule: bool
+    can_add_addons: bool
+    refund_on_cancel: bool
+    cancel_reason: str | None
+    reschedule_reason: str | None
+    addons_reason: str | None
+    addons_close_label: str
+
+
 class ManageOut(BaseModel):
     """The manage page's whole state. Eligibility is computed server-side and sent; the page never decides it."""
 
@@ -139,6 +152,33 @@ class ManageOut(BaseModel):
     free_until: date
     free_until_label: str
     inside_free_window: bool
+    can: ManageWhatYouCanDo
+
+
+class CancelIn(BaseModel):
+    """Cancelling inside the free window forfeits the deposit, so the page has to say so deliberately."""
+
+    forfeit_deposit: bool = False
+
+
+class CancelOut(BaseModel):
+    status: str
+    refunded: bool
+    refund_queued: bool
+    amount_cents: int
+    message: str
+    settlement_notice: str
+
+
+class RescheduleIn(BaseModel):
+    slot_id: int
+
+
+class AddonsIn(BaseModel):
+    """What the party should end up with. The server keeps the larger of each quantity, so this can only add."""
+
+    addons: dict[str, int] = Field(default_factory=dict)
+    kids: int = Field(ge=1, le=30)
 
 
 class RequestCreate(BaseModel):

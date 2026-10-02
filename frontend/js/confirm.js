@@ -1,5 +1,5 @@
 (function () {
-  const { api, detailText, money, el, store, keep } = window.Encore;
+  const { api, detailText, money, el, paint, store, keep } = window.Encore;
   window.EncoreShell.mountNav({ ctaHref: "index.html#book" });
   window.EncoreShell.mountFooter();
   const view = document.getElementById("view");
@@ -75,7 +75,7 @@
       el("b", { text: `${money(party.deposit_cents)} paid` }),
       el("br"),
       `${money(party.balance_cents)} due at the party`
-    );
+    ]);
     document.getElementById("quote-lines").replaceChildren(
       ...party.line_items.map((item) =>
         el("li", {}, [
@@ -83,7 +83,7 @@
           item.included ? el("span", { class: "inc", text: "Included" }) : el("span", { text: money(item.amount_cents) }),
         ])
       )
-    );
+    ]);
     const toggle = document.getElementById("quote-toggle");
     toggle.addEventListener("click", () => {
       const lines = document.getElementById("quote-lines");
@@ -112,7 +112,7 @@
     store("encore.draft", null);
     // The hold became a booking, so the browser-wide pointer every tab watches is finished with.
     keep("encore.hold", null);
-    view.replaceChildren(
+    paint(view, [
       el("p", { class: "hold-caption", text: party.first_name ? `You're all set, ${party.first_name}` : "You're all set" }),
       title("You're", "booked!"),
       el("p", { class: "muted", text: "Confirmation code" }),
@@ -123,12 +123,12 @@
       el("p", { class: "fine", text: "What happens next: Encore will text you the week of your party." }),
       ...manageLinks(party),
       where()
-    );
+    ]);
     renderBar(party);
   }
 
   function showMessage(line1, line2, message, actions) {
-    view.replaceChildren(title(line1, line2), el("p", { class: "hero-sub", style: "margin:0 auto", text: message }), ...(actions || []), where());
+    paint(view, [title(line1, line2), el("p", { class: "hero-sub", style: "margin:0 auto", text: message }), ...(actions || []), where()]);
   }
 
   function bookAgain(label) {
@@ -137,7 +137,7 @@
 
   function showPending(data) {
     const minutes = Math.ceil(data.seconds_remaining / 60);
-    view.replaceChildren(
+    paint(view, [
       el("p", { class: "hold-caption", text: "One moment" }),
       title("Confirming", "your payment"),
       el("div", { class: "spinner", role: "status", "aria-label": "Waiting for payment confirmation" }),
@@ -148,7 +148,7 @@
             el("a", { href: data.checkout_url, text: "Return to checkout" }),
           ])
         : null
-    );
+    ]);
   }
 
   async function pollHold(holdId) {

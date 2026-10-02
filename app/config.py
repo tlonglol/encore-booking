@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     tax_rate_percent: Decimal = Decimal("0")
     weekend_default: Literal["open", "request"] = "open"
     weekends_ahead: int = 8
+    # How long before the party self-serve add-on additions close. The food has to be ordered, so this
+    # is the owner's number to confirm before launch.
+    addon_cutoff_hours: int = 48
     admin_password: str = ""
     session_secret: str = ""
     trust_proxy_headers: bool = False

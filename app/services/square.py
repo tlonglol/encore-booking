@@ -14,6 +14,9 @@ SQUARE_VERSION = "2026-09-16"
 BASE_URLS = {"sandbox": "https://connect.squareupsandbox.com", "production": "https://connect.squareup.com"}
 SIGNATURE_HEADER = "x-square-hmacsha256-signature"
 REQUEST_TIMEOUT_SECONDS = 10.0
+# Square's own limits on the refund request.
+SQUARE_IDEMPOTENCY_KEY_MAX = 45
+SQUARE_REFUND_REASON_MAX = 192
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +30,12 @@ class PaymentLink:
     id: str
     url: str
     order_id: str
+
+
+@dataclass(frozen=True)
+class RefundResult:
+    id: str
+    status: str
 
 
 def signature_for(raw_body: bytes, signature_key: str, notification_url: str) -> str:
@@ -93,6 +102,45 @@ def create_deposit_link(settings: Settings, hold: Hold, slot_starts_at_label: st
     if not link.get("id") or not link.get("url") or not link.get("order_id"):
         raise SquareError("Square response missing payment link fields")
     return PaymentLink(id=link["id"], url=link["url"], order_id=link["order_id"])
+
+
+def refund_payment(
+    settings: Settings, payment_id: str, amount_cents: int, idempotency_key: str, reason: str
+) -> RefundResult:
+    """POST /v2/refunds, per Square's Refunds API (docs read 2026-10-02). The idempotency key is derived
+    from the booking and capped at Square's 45 characters, so a retry or a double click refunds once.
+
+    Square answers PENDING for a card refund it has accepted; the refund webhook settles it later.
+    """
+    if settings.fake_square_enabled:
+        return RefundResult(id=f"dev-refund-{idempotency_key}", status="PENDING")
+    if not settings.square_access_token:
+        raise SquareError("Square is not configured")
+    body = {
+        "idempotency_key": idempotency_key[:SQUARE_IDEMPOTENCY_KEY_MAX],
+        "payment_id": payment_id,
+        "amount_money": {"amount": amount_cents, "currency": "USD"},
+        "reason": reason[:SQUARE_REFUND_REASON_MAX],
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.square_access_token}",
+        "Square-Version": SQUARE_VERSION,
+        "Content-Type": "application/json",
+    }
+    try:
+        with http_client(settings) as client:
+            response = client.post("/v2/refunds", json=body, headers=headers)
+    except httpx.HTTPError as error:
+        log.warning("Square refund request failed: %s", type(error).__name__)
+        raise SquareError("Square unreachable") from error
+    if response.status_code != 200:
+        codes = [e.get("code") for e in response.json().get("errors", [])] if _is_json(response) else []
+        log.warning("Square refund rejected: status=%s codes=%s", response.status_code, codes)
+        raise SquareError(f"Square returned {response.status_code}")
+    refund = response.json().get("refund") or {}
+    if not refund.get("id") or not refund.get("status"):
+        raise SquareError("Square response missing refund fields")
+    return RefundResult(id=refund["id"], status=refund["status"])
 
 
 def _is_json(response: httpx.Response) -> bool:

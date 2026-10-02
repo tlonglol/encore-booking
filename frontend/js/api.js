@@ -76,6 +76,14 @@
     return node;
   }
 
+  // replaceChildren renders a null child as the literal text "null", where el()'s own children array
+  // drops it. This is the same forgiving behaviour for the places that replace a whole view.
+  function paint(node, children) {
+    node.replaceChildren(...children.filter(function (child) {
+      return child !== null && child !== undefined && child !== false;
+    }));
+  }
+
   function store(key, value) {
     try {
       if (value === null) sessionStorage.removeItem(key);
@@ -146,6 +154,7 @@
     money: money,
     clock: clock,
     el: el,
+    paint: paint,
     store: store,
     recall: recall,
     keep: keep,

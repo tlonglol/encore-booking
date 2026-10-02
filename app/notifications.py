@@ -37,6 +37,8 @@ class Message:
     recipient: str
     body: str
     subject: str = ""
+    # What this announces. Webhook-driven events are claimed once; parent-driven ones are just recorded.
+    event: str = "booked"
 
 
 def dollars(cents: int) -> str:
@@ -146,6 +148,36 @@ def parent_review_sms(booking: Booking, review_url: str) -> str:
     )
 
 
+def owner_cancelled_text(booking: Booking, refunded: bool, queued: bool) -> str:
+    if queued:
+        deposit = f"{dollars(booking.paid_amount_cents)} refund QUEUED for your approval in admin"
+    elif refunded:
+        deposit = f"{dollars(booking.paid_amount_cents)} deposit refunded"
+    else:
+        deposit = "Deposit NOT refunded, cancelled inside 7 days"
+    return (
+        f"CANCELLED: {PACKAGES[booking.package].label} {when(booking.event_starts_at)}, "
+        f"{full_name(booking.first_name, booking.last_name)} {booking.phone}. {deposit}. Date is open again."
+    )
+
+
+def owner_rescheduled_text(booking: Booking, moved_from: datetime) -> str:
+    return (
+        f"MOVED: {full_name(booking.first_name, booking.last_name)} {booking.phone} moved their "
+        f"{PACKAGES[booking.package].label} party from {format_day(moved_from)} to "
+        f"{when(booking.event_starts_at)}. Deposit rides along, nothing charged or refunded."
+    )
+
+
+def owner_addons_text(booking: Booking, added: str) -> str:
+    return (
+        f"ADDED: {full_name(booking.first_name, booking.last_name)} {booking.phone}, "
+        f"{PACKAGES[booking.package].label} {when(booking.event_starts_at)}. Added {added}. "
+        f"New total {dollars(booking.total_cents)}, "
+        f"{dollars(booking.total_cents - booking.deposit_cents)} due at the party."
+    )
+
+
 def owner_late_payment_text(hold: Hold, starts_at: datetime) -> str:
     return (
         f"PAYMENT ON EXPIRED HOLD, call parent: {PACKAGES[hold.package].label} {when(starts_at)}, {hold.kids} kids. "
@@ -154,12 +186,12 @@ def owner_late_payment_text(hold: Hold, starts_at: datetime) -> str:
     )
 
 
-def _owner_messages(settings: Settings, body: str) -> list[Message]:
+def _owner_messages(settings: Settings, body: str, event: str = "booked") -> list[Message]:
     messages = []
     if settings.owner_phone:
-        messages.append(Message("owner", "sms", settings.owner_phone, body))
+        messages.append(Message("owner", "sms", settings.owner_phone, body, event=event))
     if settings.discord_webhook_url:
-        messages.append(Message("owner", "discord", "discord", body))
+        messages.append(Message("owner", "discord", "discord", body, event=event))
     return messages
 
 
@@ -182,7 +214,9 @@ def messages_for(db: Session, settings: Settings, hold_id: uuid.UUID) -> tuple[i
     if hold is not None and hold.status == "paid_after_expiry":
         slot = db.get(Slot, hold.slot_id)
         assert slot is not None
-        return None, _owner_messages(settings, owner_late_payment_text(hold, slot.starts_at))
+        return None, _owner_messages(
+            settings, owner_late_payment_text(hold, slot.starts_at), event="late_payment"
+        )
     return None, []
 
 
@@ -250,6 +284,7 @@ def _claim(
         booking_id=booking_id,
         audience=message.audience,
         channel=message.channel,
+        event=message.event,
         recipient=message.recipient,
         body=message.body,
         status="pending",
@@ -260,7 +295,12 @@ def _claim(
             index_where=text("request_id IS NOT NULL"),
         )
     else:
-        statement = statement.on_conflict_do_nothing(index_elements=["hold_id", "audience", "channel"])
+        # The claim index only covers the webhook-driven events, so a cancellation or a move inserts freely:
+        # those arrive on a single request that has already decided it is allowed to happen.
+        statement = statement.on_conflict_do_nothing(
+            index_elements=["hold_id", "audience", "channel"],
+            index_where=text("event IN ('booked', 'late_payment')"),
+        )
     claimed = db.execute(statement.returning(Notification.id)).scalar_one_or_none()
     db.commit()
     return claimed
@@ -325,13 +365,38 @@ def notify_after_commit(db: Session, settings: Settings, result: WebhookResult) 
                 db.rollback()
 
 
+def notify_owner(db: Session, settings: Settings, booking: Booking, body: str, event: str) -> None:
+    """A parent-driven notice about a booking: cancelled, moved, added to. Best-effort and after commit, the
+    same as every other notification, so a Twilio outage can never undo what the parent just did."""
+    for message in _owner_messages(settings, body, event=event):
+        try:
+            notification_id = _claim(db, message, hold_id=booking.hold_id, booking_id=booking.id)
+        except Exception:
+            log.exception("Could not record owner %s notification", event)
+            db.rollback()
+            continue
+        if notification_id is None:
+            continue
+        try:
+            status, provider_id = _deliver(settings, message)
+            _record(db, notification_id, status, provider_id, None)
+        except Exception as error:
+            log.warning("owner %s notification failed: %s", event, error)
+            db.rollback()
+            try:
+                _record(db, notification_id, "failed", None, str(error)[:500])
+            except Exception:
+                log.exception("Could not record notification failure")
+                db.rollback()
+
+
 def notify_new_request(db: Session, settings: Settings, request_id: int) -> None:
     """Best-effort owner notice for a new party request. Same rules as booking notices: after commit, never raises."""
     try:
         request = db.get(PartyRequest, request_id)
         if request is None:
             return
-        messages = _owner_messages(settings, owner_request_text(request))
+        messages = _owner_messages(settings, owner_request_text(request), event="request")
     except Exception:
         log.exception("Could not build request notification for request %s", request_id)
         db.rollback()
