@@ -44,38 +44,21 @@
     return state.loading;
   }
 
-  // Read from the stylesheet rather than hardcoded, so the card fields follow the design tokens.
-  function token(name, fallback) {
-    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return value || fallback;
-  }
-
+  // What Square's style API will actually honour, which is far less than it accepts.
+  //
+  // Verified against SDK v1.86.0 in sandbox, by setting the input background to red and the text to
+  // green on a clean page and watching nothing change: `backgroundColor` and `color` are parsed,
+  // validated, and then ignored. `fontFamily` is validated hard enough to throw on a Google Font
+  // (web-safe only). So the inputs render on Square's white, and no amount of styling from here
+  // changes that: they live in a cross-origin iframe and this map is the only way in.
+  //
+  // Only the properties that demonstrably do something are set. The card block around them is dressed
+  // in our own CSS to make the white panel read as deliberate rather than as a broken dark theme.
   function styles() {
     return {
-      ".input-container": {
-        borderColor: token("--border", "#1e1e1e"),
-        borderRadius: "6px",
-      },
-      ".input-container.is-focus": {
-        borderColor: token("--blue", "#0959a7"),
-      },
-      ".input-container.is-error": {
-        borderColor: token("--warn", "#f59e0b"),
-      },
       input: {
-        backgroundColor: token("--card2", "#161616"),
-        color: token("--white", "#f0f0f0"),
-        fontFamily: "Barlow, sans-serif",
+        fontFamily: "Helvetica, Arial, sans-serif",
         fontSize: "16px",
-      },
-      "input::placeholder": {
-        color: token("--gray", "#777777"),
-      },
-      ".message-text": {
-        color: token("--gray-light", "#bbbbbb"),
-      },
-      ".message-text.is-error": {
-        color: token("--warn", "#f59e0b"),
       },
     };
   }

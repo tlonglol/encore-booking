@@ -1787,8 +1787,11 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
 
 
 /* ---- Card entry on Info + Deposit ----
-   Square renders the inputs inside its own iframes; everything around them is ours, and card.js feeds
-   the tokens below into Square's style API so the two halves match. */
+   Square renders the card inputs inside a cross-origin iframe and ignores backgroundColor and color
+   from its own style API (verified on SDK v1.86.0: a red background and green text both had no
+   effect), so the inputs are white and cannot be made otherwise. Rather than leave a white slab
+   floating in a dark form looking like a bug, the block is framed as a deliberate white payment
+   panel: our label above it, our border around it, our note beneath. */
 .card-block { margin-top: 1.5rem; }
 .card-label {
   font-family: var(--condensed);
@@ -1800,10 +1803,10 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   margin-bottom: 0.5rem;
 }
 .card-host {
-  background: var(--card2);
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
   min-height: 56px;
 }
 .card-note {

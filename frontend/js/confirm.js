@@ -75,7 +75,7 @@
       el("b", { text: `${money(party.deposit_cents)} paid` }),
       el("br"),
       `${money(party.balance_cents)} due at the party`
-    ]);
+    );
     document.getElementById("quote-lines").replaceChildren(
       ...party.line_items.map((item) =>
         el("li", {}, [
@@ -83,7 +83,7 @@
           item.included ? el("span", { class: "inc", text: "Included" }) : el("span", { text: money(item.amount_cents) }),
         ])
       )
-    ]);
+    );
     const toggle = document.getElementById("quote-toggle");
     toggle.addEventListener("click", () => {
       const lines = document.getElementById("quote-lines");
