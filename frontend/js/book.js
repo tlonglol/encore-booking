@@ -482,7 +482,7 @@
     button.textContent = `Pay ${money(ui.quote ? ui.quote.deposit_cents : 10000)} & lock it in`;
     renderPolicy();
     button.onclick = pay;
-    note.textContent = "Secure checkout by Square.";
+    note.textContent = "Card secured by Square. You stay on this page.";
   }
 
   // ---------- helpers ----------
@@ -1487,7 +1487,11 @@
     const host = $("card-host");
     if (!host) return;
     if (!(await window.EncoreCard.enabled())) {
-      $("card-block").hidden = true;
+      // No Square application id, so there is nothing to mount. That is local dev with no credentials,
+      // where the deposit is faked server-side; saying so beats an unexplained gap above the button.
+      const note = $("card-note");
+      if (note) note.textContent = "No card fields: SQUARE_APPLICATION_ID is not set, so the deposit is faked locally.";
+      $("card-host").hidden = true;
       return;
     }
     try {
