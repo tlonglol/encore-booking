@@ -61,6 +61,30 @@
     <div class="drawer-body" id="compare-body"></div>
   </dialog>
 
+  <dialog class="waitlist-modal" id="waitlist-modal" aria-labelledby="waitlist-modal-title">
+    <button type="button" class="waitlist-modal-close" id="waitlist-modal-close" aria-label="Close">✕</button>
+    <div id="waitlist-modal-ask">
+      <h2 class="waitlist-modal-title" id="waitlist-modal-title"></h2>
+      <p class="waitlist-modal-sub" id="waitlist-modal-sub"></p>
+      <form id="waitlist-modal-form">
+        <div class="field">
+          <label for="waitlist-modal-email">Your email</label>
+          <input id="waitlist-modal-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
+        </div>
+        <div class="field">
+          <label for="waitlist-modal-phone">Phone (optional)</label>
+          <input id="waitlist-modal-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(646) 000-0000">
+        </div>
+        <p class="ask-note" id="waitlist-modal-note" role="status"></p>
+        <button type="submit" class="btn btn-primary btn-block">Notify me</button>
+      </form>
+    </div>
+    <div id="waitlist-modal-done" hidden>
+      <p class="waitlist-modal-confirm" id="waitlist-modal-confirm-text"></p>
+      <button type="button" class="btn btn-ghost btn-block" id="waitlist-modal-done-btn">Done</button>
+    </div>
+  </dialog>
+
   <script src="/js/config.js"></script>
   <script src="/js/test-ribbon.js"></script>
   <script src="/js/turnstile.js"></script>

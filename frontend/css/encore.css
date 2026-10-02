@@ -1819,11 +1819,10 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
 
 
 /* ---- Per-date waitlist ----
-   A taken date is clickable so it can open this panel, but it must never read as available: the card
-   keeps its BOOKED / ON HOLD styling and its state word, and only gains a quiet "Notify me" affordance.
-   The panel is a sibling of the card button, because a form cannot live inside a <button>. */
-.wk-cell { display: flex; flex-direction: column; gap: 8px; }
-.wk-cell > .wk-card { flex: 1; }
+   A taken date is clickable so it can open the waitlist modal, but it must never read as available: the
+   card keeps its BOOKED / ON HOLD styling and its state word, and only gains a quiet "Notify me"
+   affordance. The modal lives once in the DOM (book.html) and is reused for whichever date was clicked,
+   so opening it never touches the grid's own layout: the grid must never reflow. */
 .wk-card.booked, .wk-card.held { cursor: pointer; }
 .wk-notify {
   margin-top: auto;
@@ -1843,28 +1842,13 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   color: var(--blue-light);
   text-decoration-color: currentColor;
 }
-.wk-ask {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--card2);
-  border: 1px solid var(--border-blue);
-  border-radius: 6px;
-}
-.wk-ask-lede { font-family: var(--body); font-size: 13px; color: var(--gray-light); margin: 0; }
-.wk-ask .field { margin: 0; }
+/* Once this page view has signed up for a date, the card says so in the same spot "Notify me" sat in,
+   rather than opening the modal again for a date that is already on the list. */
 .wk-joined {
-  margin: 0;
+  margin-top: auto;
   font-family: var(--body);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--tier-standard);
-}
-
-/* The grid is two columns; an open panel spans both so the fields are not squeezed into half a phone. */
-@media (min-width: 560px) {
-  .wk-cards:has(.wk-ask) { grid-template-columns: 1fr 1fr; }
-  .wk-cell:has(.wk-ask) { grid-column: 1 / -1; }
 }
 
 .grid-foot {
@@ -1875,3 +1859,45 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   text-align: center;
 }
 .grid-foot a { color: var(--blue-light); }
+
+/* ---- Waitlist modal ----
+   Same small centered-dialog shape as .hold-modal: a fixed cap that also behaves on a phone, so no
+   separate mobile rule is needed. The backdrop opacity (0.6) is deliberately lighter than the other two
+   dialogs: this one is a courtesy ask, not an interruption that demands full attention. */
+.waitlist-modal {
+  width: min(400px, calc(100% - 32px));
+  margin: auto;
+  padding: 1.5rem 1.4rem 1.4rem;
+  border: 1px solid var(--border-blue);
+  border-radius: 12px;
+  background: var(--dark);
+  color: var(--white);
+  position: relative;
+}
+.waitlist-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.waitlist-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--gray-light);
+}
+.waitlist-modal-close:hover { border-color: var(--blue); color: var(--white); }
+.waitlist-modal-title {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  margin: 0 1.6rem 0.4rem 0;
+}
+.waitlist-modal-sub { font-family: var(--body); font-size: 14px; color: var(--gray-light); margin: 0 0 1rem; }
+#waitlist-modal-form { display: flex; flex-direction: column; gap: 0.85rem; }
+#waitlist-modal-form .field { margin: 0; }
+.waitlist-modal-confirm { font-family: var(--body); font-size: 15px; color: var(--white); margin: 0 1.6rem 1rem 0; }
+
+body.scroll-locked { overflow: hidden; }
