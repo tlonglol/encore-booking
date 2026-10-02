@@ -1,11 +1,22 @@
+import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import text
+from psycopg.errors import UniqueViolation
+from sqlalchemy import func, text
 from sqlalchemy.engine import Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models import Booking, Hold
+from app.pricing import quote
+from app.services.booking import new_confirmation_code, new_manage_token
+from app.services.holds import SLOT_INDEX, SlotNotFound, SlotUnavailable, normalize_phone
+
 FULL_REFUND_NOTICE = timedelta(days=7)
+# The second index that guards a slot. Both are checked by the manual path, because a manual booking
+# writes both a hold row and a booking row and either one can lose the race.
+BOOKING_SLOT_INDEX = "bookings_one_live_per_slot"
 
 
 class BookingNotFound(Exception):
@@ -14,6 +25,25 @@ class BookingNotFound(Exception):
 
 class AlreadyCancelled(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class ManualBookingInput:
+    """What the owner types in. No prices: the server computes them from the package and the headcount."""
+
+    slot_id: int
+    package: str
+    kids: int
+    addons: dict[str, int]
+    first_name: str
+    last_name: str
+    phone: str
+    email: str
+    kid_name: str | None
+    kid_age: int | None
+    birthday: date | None
+    notes: str | None
+    deposit_collected: bool
 
 
 @dataclass(frozen=True)
@@ -30,7 +60,7 @@ def list_bookings(db: Session) -> list[Row]:
                 """
                 SELECT b.id, b.confirmation_code, b.event_starts_at, b.package, b.kids, b.addons, b.total_cents,
                        b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email,
-                       b.kid_name, b.kid_age, b.birthday, b.notes,
+                       b.kid_name, b.kid_age, b.birthday, b.notes, b.origin, b.balance_paid_at,
                        b.square_payment_id, b.created_at, b.cancelled_at, b.cancel_reason,
                        b.reschedule_count, b.rescheduled_at, b.cancel_source,
                        b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund,
@@ -41,6 +71,140 @@ def list_bookings(db: Session) -> list[Row]:
             )
         )
     )
+
+
+def create_manual_booking(db: Session, data: ManualBookingInput) -> Booking:
+    """A party taken over the phone, written through the same slot exclusivity a parent's booking gets.
+
+    No card, no Square, no parent notification. What it does share with the online path is the only part
+    that must not be re-implemented: the date is claimed by writing a hold row and a booking row in one
+    transaction, so `holds_one_active_per_slot` and `bookings_one_live_per_slot` decide who wins. An
+    application-level "is it free?" check runs first for a clear error message, but it is not the guard;
+    the indexes are, which is what makes the gap between the form loading and the owner submitting safe.
+    """
+    priced = quote(data.package, data.kids, data.addons)
+    phone = normalize_phone(data.phone)
+    email = data.email.strip().lower()
+
+    slot = db.execute(
+        text("SELECT id, starts_at, blocked_at FROM slots WHERE id = :id FOR SHARE"), {"id": data.slot_id}
+    ).one_or_none()
+    if slot is None:
+        db.rollback()
+        raise SlotNotFound()
+    if slot.blocked_at is not None:
+        db.rollback()
+        raise SlotUnavailable()
+
+    # Lazy expiry, exactly as create_hold does it: a lapsed hold still sits in the active-slot index until
+    # something retires it, and it would otherwise block a date the grid already shows as open.
+    db.execute(
+        text(
+            "UPDATE holds SET status = 'expired', updated_at = now()"
+            " WHERE slot_id = :id AND status = 'pending_payment' AND expires_at <= now()"
+        ),
+        {"id": data.slot_id},
+    )
+    taken = db.execute(
+        text(
+            """
+            SELECT EXISTS (SELECT 1 FROM holds WHERE slot_id = :id AND status = 'pending_payment'
+                           AND expires_at > now())
+                OR EXISTS (SELECT 1 FROM bookings WHERE slot_id = :id AND cancelled_at IS NULL)
+            """
+        ),
+        {"id": data.slot_id},
+    ).scalar_one()
+    if taken:
+        db.rollback()
+        raise SlotUnavailable()
+
+    hold = Hold(
+        slot_id=data.slot_id,
+        status="booked",
+        # Booked outright, so there is no window to run out; the column is NOT NULL and wants a value.
+        expires_at=func.now(),
+        package=priced.package,
+        kids=priced.kids,
+        addons=priced.addons,
+        line_items=priced.line_items_json(),
+        total_cents=priced.total_cents,
+        deposit_cents=priced.deposit_cents,
+        first_name=data.first_name.strip(),
+        last_name=data.last_name.strip(),
+        phone=phone,
+        email=email,
+        kid_name=(data.kid_name or "").strip() or None,
+        kid_age=data.kid_age,
+        birthday=data.birthday,
+        notes=(data.notes or "").strip() or None,
+    )
+    db.add(hold)
+    db.flush()
+    booking = Booking(
+        hold_id=hold.id,
+        slot_id=data.slot_id,
+        confirmation_code=new_confirmation_code(),
+        manage_token=new_manage_token(),
+        package=hold.package,
+        kids=hold.kids,
+        addons=hold.addons,
+        line_items=hold.line_items,
+        total_cents=hold.total_cents,
+        deposit_cents=hold.deposit_cents,
+        first_name=hold.first_name,
+        last_name=hold.last_name,
+        phone=hold.phone,
+        email=hold.email,
+        kid_name=hold.kid_name,
+        kid_age=hold.kid_age,
+        birthday=hold.birthday,
+        notes=hold.notes,
+        # Not a Square id and shaped so it can never be mistaken for one. `origin` is what the refund path
+        # actually reads; this keeps the unique NOT NULL column honest.
+        square_payment_id=f"manual-{uuid.uuid4()}",
+        square_order_id="",
+        paid_amount_cents=priced.deposit_cents if data.deposit_collected else 0,
+        origin="manual",
+        event_starts_at=slot.starts_at,
+    )
+    db.add(booking)
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        constraint = error.orig.diag.constraint_name if isinstance(error.orig, UniqueViolation) else None
+        if constraint in (SLOT_INDEX, BOOKING_SLOT_INDEX):
+            raise SlotUnavailable() from error
+        raise
+    db.refresh(booking)
+    return booking
+
+
+def set_balance_paid(db: Session, booking_id: int, paid: bool) -> datetime | None:
+    """Stamps (or clears) the money the owner took in person. Moves nothing and tells nobody.
+
+    Refused on a cancelled booking: there is no party to collect at, and a stamp there would only read as
+    a record of money that was never taken.
+    """
+    row = db.execute(
+        text("SELECT id, cancelled_at FROM bookings WHERE id = :id FOR UPDATE"), {"id": booking_id}
+    ).one_or_none()
+    if row is None:
+        db.rollback()
+        raise BookingNotFound()
+    if row.cancelled_at is not None:
+        db.rollback()
+        raise AlreadyCancelled()
+    stamped = db.execute(
+        text(
+            "UPDATE bookings SET balance_paid_at = CASE WHEN :paid THEN now() END"
+            " WHERE id = :id RETURNING balance_paid_at"
+        ),
+        {"id": booking_id, "paid": paid},
+    ).scalar_one()
+    db.commit()
+    return stamped
 
 
 def cancel_booking(db: Session, booking_id: int, reason: str | None) -> Cancelled:

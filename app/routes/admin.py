@@ -2,16 +2,17 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
 from app.services.admin_auth import COOKIE_NAME, SESSION_SECONDS, issue_token, password_matches, token_valid
-from app.notifications import addons_summary
+from app.notifications import addons_summary, notify_owner, owner_manual_booked_text
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
 from app.services import demo
+from app.services.holds import SlotNotFound, SlotUnavailable, check_birthday
 from app.services.refunds import REPEAT_CANCELLER_THRESHOLD, send_refund
 from app.services.slots import SlotConflict, set_blocked
 from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time, venue_today
@@ -95,6 +96,13 @@ class CancelIn(BaseModel):
     reason: str | None = None
 
 
+def _deposit_status(row: Any) -> str:
+    """What the owner needs to know about the deposit in three words, by how it was taken."""
+    if row.origin == "manual":
+        return "collected in person" if row.paid_amount_cents else "waived"
+    return "paid (dev fake)" if row.square_payment_id.startswith("dev-pay-") else "paid"
+
+
 def _when(moment: datetime | None) -> dict[str, str | None]:
     if moment is None:
         return {"day_label": None, "time_label": None}
@@ -115,8 +123,12 @@ def bookings(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "total_cents": row.total_cents,
             "deposit_cents": row.deposit_cents,
             "paid_amount_cents": row.paid_amount_cents,
-            "balance_cents": row.total_cents - row.deposit_cents,
-            "deposit_status": "paid (dev fake)" if row.square_payment_id.startswith("dev-pay-") else "paid",
+            # What is actually still owed: total less what was taken. The two readings only differ for a
+            # manual booking whose deposit was waived, where nothing was paid and the whole total is due.
+            "balance_cents": row.total_cents - row.paid_amount_cents,
+            "balance_paid_at": row.balance_paid_at.isoformat() if row.balance_paid_at else None,
+            "origin": row.origin,
+            "deposit_status": _deposit_status(row),
             "kid_name": row.kid_name,
             "kid_age": row.kid_age,
             "birthday": row.birthday.isoformat() if row.birthday else None,
@@ -210,6 +222,90 @@ def cancel(booking_id: int, body: CancelIn, db: Session = Depends(get_db)) -> di
     except admin_service.AlreadyCancelled as error:
         raise HTTPException(status_code=409, detail="Booking is already cancelled") from error
     return {"id": result.booking_id, "cancelled_at": result.cancelled_at.isoformat(), "full_refund": result.full_refund}
+
+
+class ManualBookingIn(BaseModel):
+    """No price field on purpose: the server quotes the party from the package and the headcount."""
+
+    slot_id: int
+    package: str
+    kids: int
+    addons: dict[str, int] = Field(default_factory=dict)
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    phone: str
+    email: EmailStr
+    kid_name: str | None = Field(default=None, max_length=80)
+    kid_age: int | None = Field(default=None, ge=1, le=18)
+    birthday: date | None = None
+    notes: str | None = Field(default=None, max_length=500)
+    deposit_collected: bool
+
+
+class BalancePaidIn(BaseModel):
+    paid: bool
+
+
+@router.post("/bookings", status_code=201, dependencies=[Depends(require_admin)])
+def create_booking(body: ManualBookingIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """A party taken over the phone. No card, no Square, no parent notification.
+
+    The date is claimed by the same unique indexes a parent's booking goes through, so the gap between
+    this form loading and the owner submitting it is a 409, never a second party on one Saturday.
+    """
+    settings = get_settings()
+    try:
+        booking = admin_service.create_manual_booking(
+            db,
+            admin_service.ManualBookingInput(
+                slot_id=body.slot_id,
+                package=body.package,
+                kids=body.kids,
+                addons=body.addons,
+                first_name=body.first_name,
+                last_name=body.last_name,
+                phone=body.phone,
+                email=str(body.email),
+                kid_name=body.kid_name,
+                kid_age=body.kid_age,
+                birthday=check_birthday(body.birthday, venue_today(datetime.now(UTC))),
+                notes=body.notes,
+                deposit_collected=body.deposit_collected,
+            ),
+        )
+    except ValueError as error:
+        # PricingError, normalize_phone and check_birthday are all ValueErrors carrying the sentence the
+        # owner should read.
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except SlotNotFound as error:
+        raise HTTPException(status_code=404, detail="That date does not exist") from error
+    except SlotUnavailable as error:
+        raise HTTPException(
+            status_code=409,
+            detail="That date was taken while you were filling this in. Nothing was saved; pick another date.",
+        ) from error
+    # The owner hears about it like any other booking; the parent does not, because they paid nothing here
+    # and this system has promised them nothing.
+    notify_owner(db, settings, booking, owner_manual_booked_text(booking), event="booked")
+    return {
+        "id": booking.id,
+        "confirmation_code": booking.confirmation_code,
+        "total_cents": booking.total_cents,
+        "paid_amount_cents": booking.paid_amount_cents,
+        "balance_cents": booking.total_cents - booking.paid_amount_cents,
+    }
+
+
+@router.post("/bookings/{booking_id}/balance-paid", dependencies=[Depends(require_admin)])
+def balance_paid(booking_id: int, body: BalancePaidIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Stamps the balance the owner took in person, or clears it after a mis-tap. No money moves."""
+    try:
+        stamped = admin_service.set_balance_paid(db, booking_id, body.paid)
+    except admin_service.BookingNotFound as error:
+        raise HTTPException(status_code=404, detail="Booking not found") from error
+    except admin_service.AlreadyCancelled as error:
+        raise HTTPException(status_code=409, detail="This booking is cancelled") from error
+    return {"id": booking_id, "balance_paid_at": stamped.isoformat() if stamped else None}
 
 
 @router.get("/refunds", dependencies=[Depends(require_admin)])

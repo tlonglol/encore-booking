@@ -38,6 +38,9 @@ NOTIFICATION_EVENTS = (
 # parent request that has already decided it is allowed to happen, so they are recorded, not claimed.
 CLAIMED_ONCE_EVENTS = ("booked", "late_payment", "refunded")
 ACTIVE_HOLD_STATUSES = ("pending_payment", "booked")
+# How a booking came to exist. A manual one carries a synthetic payment id, so anything that would hand
+# that id to Square has to check this first.
+BOOKING_ORIGINS = ("online", "manual")
 PACKAGES = ("standard", "plus", "premium")
 REQUEST_STATUSES = ("new", "approved", "declined", "expired", "converted")
 FLAG_KINDS = ("paid_after_expiry", "amount_mismatch", "unmatched_order", "duplicate_payment")
@@ -160,6 +163,7 @@ class Booking(Base):
         CheckConstraint(
             "cancel_source IS NULL OR cancel_source IN ('parent', 'owner')", name="bookings_cancel_source_valid"
         ),
+        CheckConstraint(_in("origin", BOOKING_ORIGINS), name="bookings_origin_valid"),
         # Second, independent guard: at most one live booking per slot.
         Index(
             "bookings_one_live_per_slot",
@@ -200,6 +204,10 @@ class Booking(Base):
     # lets repeat cancellations be counted when the email and phone change but the card does not.
     card_fingerprint: Mapped[str | None] = mapped_column(Text)
     paid_amount_cents: Mapped[int] = mapped_column(Integer)
+    origin: Mapped[str] = mapped_column(Text, server_default=text("'online'"))
+    # The owner stamping the money they took in person at the party. No amount: it is the booking's own
+    # balance, and recording a second copy of it would only create something to disagree with.
+    balance_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     event_starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Every move, for the owner's benefit; the courtesy flag is the one promise the rules actually spend.

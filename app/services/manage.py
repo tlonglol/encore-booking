@@ -91,6 +91,16 @@ def addons_open(booking: Booking, cutoff_hours: int, now: datetime) -> bool:
     return now < addons_close_at(booking, cutoff_hours)
 
 
+def refundable_through_square(booking: Booking) -> bool:
+    """Whether there is a real Square payment behind this booking to send a refund against.
+
+    A manual booking's payment id is synthetic, so handing it to Square would be a guaranteed failure
+    dressed up as a pending refund. The owner took that deposit in person (or waived it) and gives it
+    back the same way.
+    """
+    return booking.origin == "online" and booking.paid_amount_cents > 0
+
+
 def can_reschedule(booking: Booking, today: date) -> bool:
     """Free and unlimited while the party is a week or more away; inside that, the one courtesy move."""
     return inside_free_window(booking, today) or not booking.courtesy_reschedule_used
@@ -113,7 +123,7 @@ def cancel_booking(db: Session, booking_id: int, today: date, forfeit_deposit: b
     mis-tap. Either way the date goes back on the grid: an unsold Saturday helps nobody.
     """
     booking = _lock_live_booking(db, booking_id)
-    refundable = inside_free_window(booking, today)
+    refundable = inside_free_window(booking, today) and refundable_through_square(booking)
     if not refundable and not forfeit_deposit:
         db.rollback()
         raise NeedsConfirmation()

@@ -37,6 +37,15 @@
       <div id="panel" class="cards" aria-live="polite"></div>
     </div>
   </main>
+
+  <!-- Manual booking entry. The form is built in JS from /api/catalog so the packages, add-ons and
+       limits here can never drift from the ones the funnel prices against. -->
+  <dialog class="manual-modal" id="manual-modal" aria-labelledby="manual-modal-title">
+    <button type="button" class="waitlist-modal-close" id="manual-modal-close" aria-label="Close">✕</button>
+    <h2 class="waitlist-modal-title" id="manual-modal-title">Add a booking</h2>
+    <p class="waitlist-modal-sub">A party taken over the phone. No card is charged and the parent is not texted.</p>
+    <form id="manual-form"></form>
+  </dialog>
   <footer class="page-footer" id="footer"></footer>
   <script src="js/config.js"></script>
   <script src="js/test-ribbon.js"></script>

@@ -743,8 +743,21 @@ img { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 
 /* ── Admin ── */
-.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); margin-top: 1.5rem; }
+/* The strip scrolls sideways rather than wrapping or squeezing: nine tabs do not fit a phone, and a tab
+   that has been shrunk to fit is a tab nobody can read or hit. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+  margin-top: 1.5rem;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
+  flex: 0 0 auto;
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -785,6 +798,142 @@ img { max-width: 100%; }
 .pill.bad { color: #ffb4b6; border-color: rgba(229, 72, 77, 0.5); }
 .body-text { font-size: 13px; color: var(--gray); margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .login { max-width: 380px; margin: 4rem auto; }
+/* Phone numbers and emails are the owner's job on a phone: one tap to call or write, and a tap target
+   that survives a thumb. The underline is what says it is tappable without turning the card into links. */
+.contact-link {
+  color: var(--blue-light);
+  text-decoration: underline;
+  text-decoration-color: rgba(26, 116, 204, 0.45);
+  text-underline-offset: 3px;
+  padding: 2px 0;
+}
+.contact-link:hover { text-decoration-color: currentColor; }
+
+/* ---- Manual booking entry ----
+   Same dialog shape as the waitlist modal, sized for a form rather than two fields, and capped to the
+   viewport so a long form scrolls inside the dialog instead of pushing the page. */
+.manual-modal {
+  width: min(560px, calc(100% - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 1.5rem 1.4rem 1.4rem;
+  border: 1px solid var(--border-blue);
+  border-radius: 12px;
+  background: var(--dark);
+  color: var(--white);
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.manual-modal::backdrop { background: rgba(0, 0, 0, 0.75); }
+#manual-form { display: flex; flex-direction: column; gap: 0.85rem; }
+#manual-form .field { margin: 0; }
+#manual-form .form-grid { gap: 0.85rem; }
+.field-hint { font-family: var(--body); font-size: 12px; color: var(--gray); margin: 5px 0 0; }
+
+.manual-addons, .manual-deposit {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem 1rem;
+  margin: 0;
+}
+.manual-addons legend, .manual-deposit legend {
+  font-family: var(--condensed);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gray-light);
+  padding: 0 6px;
+}
+/* The whole row is the label, so the row is the tap target and it clears 44px even though the checkbox
+   itself is smaller. The owner is doing this one-handed on a phone while the parent is still talking. */
+.manual-addon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--body);
+  font-size: 14px;
+}
+.manual-addon:last-child { border-bottom: 0; }
+.manual-addon-name { flex: 1; }
+.manual-addon-price { font-family: var(--body); font-size: 13px; color: var(--blue-light); }
+.addon-check { width: 22px; height: 22px; accent-color: var(--blue); flex: none; }
+.addon-qty {
+  width: 72px;
+  min-height: 44px;
+  flex: none;
+  background: var(--black);
+  border: 1px solid #2a3a50;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--white);
+  font-family: var(--body);
+  font-size: 16px;
+  color-scheme: dark;
+}
+.manual-radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 0;
+  font-family: var(--body);
+  font-size: 14px;
+}
+.manual-radio input { width: 22px; height: 22px; accent-color: var(--blue); flex: none; }
+
+.manual-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 0.9rem 1rem;
+  background: rgba(5, 5, 5, 0.4);
+  border: 1px solid var(--border-blue);
+  border-radius: 8px;
+  font-family: var(--body);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.manual-total-sum b { color: var(--white); font-weight: 600; }
+.manual-total-due { font-size: 13px; color: var(--gray-light); }
+.manual-total-bad { font-size: 13px; color: #ffb4b6; }
+.manual-actions { display: flex; gap: 10px; }
+.manual-actions .btn { flex: 1; }
+
+/* ---- Admin on a phone ----
+   The owner runs this one-handed at the party, so every tap target clears 44px and the tab strip keeps
+   its full-bleed scroll. Desktop is untouched: these only apply below the site's single breakpoint. */
+@media (max-width: 768px) {
+  /* Bleed the strip to the screen edges so a half-visible tab shows there is more to scroll to. */
+  .tabs {
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+  .tab { padding: 0.85rem 0.9rem; }
+  .btn-sm { min-height: 44px; padding: 11px 16px; }
+  .card-actions { gap: 10px; }
+  .card-actions .btn { flex: 1 1 auto; min-width: 140px; }
+  .card-title { font-size: 23px; }
+  .manual-modal { padding: 1.25rem 1.1rem 1.1rem; }
+  /* The form is taller than a phone, so the two decisions stay reachable without scrolling back down.
+     The rule and the matching background are what stop it reading as content lying over content. */
+  .manual-actions {
+    position: sticky;
+    bottom: -1.1rem;
+    background: var(--dark);
+    margin: 0 -1.1rem -1.1rem;
+    padding: 12px 1.1rem calc(1.1rem + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+  }
+  .manual-actions .btn { min-height: 48px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+}
 
 /* ── Footer ── */
 .page-footer {

@@ -125,6 +125,24 @@ def owner_booked_text(booking: Booking) -> str:
     return body
 
 
+def owner_manual_booked_text(booking: Booking) -> str:
+    """The owner just typed this in, so it says so rather than announcing a payment that never happened."""
+    deposit = (
+        f"Deposit {dollars(booking.paid_amount_cents)} collected in person"
+        if booking.paid_amount_cents
+        else "Deposit waived"
+    )
+    body = (
+        f"ADDED BY HAND: {PACKAGES[booking.package].label} {when(booking.event_starts_at)}, {booking.kids} kids, "
+        f"{addons_summary(booking.addons)}. {deposit}, "
+        f"{dollars(booking.total_cents - booking.paid_amount_cents)} due at the party. "
+        f"{full_name(booking.first_name, booking.last_name)} {booking.phone}."
+    )
+    if booking.notes:
+        body += f" Notes: {booking.notes}"
+    return body
+
+
 def owner_request_text(request: PartyRequest) -> str:
     return (
         f"PARTY REQUEST: {PACKAGES[request.package].label} {format_date(request.local_date)} at "

@@ -31,8 +31,8 @@
     return result;
   }
 
-  function confirmButton(label, confirmLabel, action) {
-    const button = el("button", { type: "button", class: "btn btn-danger btn-sm", text: label });
+  function confirmButton(label, confirmLabel, action, tone) {
+    const button = el("button", { type: "button", class: `btn ${tone || "btn-danger"} btn-sm`, text: label });
     let armed = false;
     button.addEventListener("click", async () => {
       if (!armed) {
@@ -50,11 +50,59 @@
     return button;
   }
 
+  function contact(value, scheme) {
+    return el("a", { href: `${scheme}:${value}`, class: "contact-link", text: value });
+  }
+
+  function addBookingCard() {
+    return el("article", { class: "card" }, [
+      el("div", { class: "card-head" }, [
+        el("div", { class: "card-title", text: "Took one over the phone?" }),
+      ]),
+      el("div", { class: "card-meta", text: "Type it in and the date is claimed the same way a parent's booking claims it. No card is charged." }),
+      el("div", { class: "card-actions" }, [
+        el("button", { type: "button", class: "btn btn-primary btn-sm", text: "+ Add booking", onclick: openManual }),
+      ]),
+    ]);
+  }
+
+  // The balance is money the owner takes in person at the party, so the action is a confirm-then-act
+  // button like the destructive ones, and the undo lives with the booking rather than behind a timeout:
+  // a mis-tap is found later, at the till, not in the next four seconds.
+  function balanceRow(b) {
+    if (b.cancelled_at) return null;
+    if (b.balance_cents <= 0) {
+      return el("div", { class: "card-meta small muted", text: "Nothing due at the party." });
+    }
+    if (b.balance_paid_at) {
+      return el("div", { class: "card-actions" }, [
+        el("span", { class: "pill ok", text: `Balance paid ${when(b.balance_paid_at)}` }),
+        el("button", {
+          type: "button",
+          class: "btn btn-ghost btn-sm",
+          text: "Undo",
+          onclick: () => setBalancePaid(b.id, false),
+        }),
+      ]);
+    }
+    return el("div", { class: "card-actions" }, [
+      el("span", { class: "pill warn", text: `${money(b.balance_cents)} due at the party` }),
+      confirmButton("Mark balance paid", "Tap again to confirm", () => setBalancePaid(b.id, true), "btn-primary"),
+    ]);
+  }
+
+  async function setBalancePaid(id, paid) {
+    const result = await guarded(`/api/admin/bookings/${id}/balance-paid`, { method: "POST", body: { paid } });
+    if (result.status !== 200) return result.status === 401 ? null : problem(result.data);
+    bookings();
+  }
+
   async function bookings() {
     const { status, data } = await guarded("/api/admin/bookings");
     if (status !== 200) return status === 401 ? null : problem(data);
-    if (!data.length) return panel.replaceChildren(empty("No bookings yet."));
+    if (!data.length) return panel.replaceChildren(addBookingCard(), empty("No bookings yet."));
     panel.replaceChildren(
+      addBookingCard(),
       ...data.map((b) =>
         el("article", { class: "card" + (b.cancelled_at ? " cancelled" : "") }, [
           el("div", { class: "card-head" }, [
@@ -65,13 +113,14 @@
             el("b", { text: `${b.package} · ${b.kids} kids` }),
             b.kid_name ? ` · for ${b.kid_name}${b.kid_age ? ` (${b.kid_age})` : ""}` : "",
             ` · ${b.addons}`,
+            b.origin === "manual" ? el("span", { class: "pill", text: "By hand" }) : null,
           ]),
           el("div", { class: "card-meta" }, [
-            "Total ", el("b", { text: money(b.total_cents) }), " · deposit ", el("b", { text: money(b.paid_amount_cents) }),
-            " · balance due ", el("b", { text: money(b.balance_cents) }),
+            "Total ", el("b", { text: money(b.total_cents) }), " · paid ", el("b", { text: money(b.paid_amount_cents) }),
+            " · balance ", el("b", { text: money(b.balance_cents) }),
           ]),
           el("div", { class: "card-meta" }, [
-            el("b", { text: b.name }), " · ", el("a", { href: `tel:${b.phone}`, text: b.phone }), " · ", el("a", { href: `mailto:${b.email}`, text: b.email }),
+            el("b", { text: b.name }), " · ", contact(b.phone, "tel"), " · ", contact(b.email, "mailto"),
           ]),
           b.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + b.birthday_line })]) : null,
           b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
@@ -82,6 +131,7 @@
               + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)} by ${b.cancel_source || "owner"}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "")
               + (b.refund_status ? ` · refund ${b.refund_status}` : ""),
           }),
+          balanceRow(b),
           el("div", { class: "card-actions" }, [
             el("span", { class: "pill" + (b.full_refund ? " ok" : " warn"), text: b.full_refund ? "Full refund if cancelled" : "Inside 7 days: no refund, one reschedule" }),
             b.cancelled_at
@@ -111,7 +161,7 @@
           el("div", { class: "card-meta" }, [el("b", { text: `${r.package} · ${r.kids} kids` }), ` · ${r.addons}`]),
           el("div", { class: "card-meta" }, ["Quoted ", el("b", { text: money(r.total_cents) }), " · deposit would be ", el("b", { text: money(r.deposit_cents) })]),
           el("div", { class: "card-meta" }, [
-            el("b", { text: r.name }), " · ", el("a", { href: `tel:${r.phone}`, text: r.phone }), " · ", el("a", { href: `mailto:${r.email}`, text: r.email }),
+            el("b", { text: r.name }), " · ", contact(r.phone, "tel"), " · ", contact(r.email, "mailto"),
           ]),
           r.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + r.birthday_line })]) : null,
           r.notes ? el("div", { class: "body-text", text: `Notes: ${r.notes}` }) : null,
@@ -133,7 +183,7 @@
             el("span", { class: "pill" + (f.resolved_at ? " ok" : " warn"), text: f.resolved_at ? "Resolved" : "Open" }),
           ]),
           f.name
-            ? el("div", { class: "card-meta" }, [el("b", { text: f.name }), " · ", el("a", { href: `tel:${f.phone}`, text: f.phone }), ` · ${f.email}`])
+            ? el("div", { class: "card-meta" }, [el("b", { text: f.name }), " · ", contact(f.phone, "tel"), " · ", contact(f.email, "mailto")])
             : null,
           f.day_label ? el("div", { class: "card-meta", text: `Wanted ${f.day_label} ${f.time_label} · ${f.package} · ${f.kids} kids` }) : null,
           el("div", { class: "card-meta small muted", text: `${f.amount_cents !== null ? money(f.amount_cents) : "?"} · Square payment ${f.square_payment_id} · ${when(f.created_at)}` }),
@@ -248,8 +298,8 @@
               el("div", { class: "card-meta" }, [
                 a.name ? el("b", { text: a.name }) : el("span", { class: "muted", text: "No name yet" }),
                 " · ",
-                el("a", { href: `mailto:${a.email}`, text: a.email }),
-                a.phone ? [" · ", el("a", { href: `tel:${a.phone}`, text: a.phone })] : null,
+                contact(a.email, "mailto"),
+                a.phone ? [" · ", contact(a.phone, "tel")] : null,
               ].flat()),
               el("div", { class: "card-meta small muted", text: `${a.package ? `${a.package}, ${a.kids} kids · ` : "Left before choosing a package · "}started ${when(a.created_at)}` }),
             ])
@@ -283,8 +333,8 @@
           ]),
           ...group.rows.map((w) =>
             el("div", { class: "card-meta" }, [
-              el("a", { href: `mailto:${w.email}`, text: w.email }),
-              w.phone ? [" · ", el("a", { href: `tel:${w.phone}`, text: w.phone })] : null,
+              contact(w.email, "mailto"),
+              w.phone ? [" · ", contact(w.phone, "tel")] : null,
               el("span", { class: "small muted", text: ` · signed up ${when(w.created_at)}` }),
               w.notified_at
                 ? el("span", { class: "small muted", text: ` · notified ${when(w.notified_at)}` })
@@ -322,7 +372,7 @@
             el("span", { class: "pill warn", text: "No auto-refund" }),
           ]),
           el("div", { class: "card-meta" }, [
-            el("a", { href: `tel:${r.phone}`, text: r.phone }), " · ", r.email,
+            contact(r.phone, "tel"), " · ", contact(r.email, "mailto"),
             ` · matched by ${r.identity} · last cancelled ${when(r.last_cancelled_at)}`,
           ]),
           el("div", { class: "card-meta small muted", text: "Their refunds wait here for you instead of sending themselves." }),
@@ -340,7 +390,7 @@
         el("span", { class: "pill " + tone, text: label }),
       ]),
       el("div", { class: "card-meta" }, [
-        el("b", { text: r.name }), " · ", el("a", { href: `tel:${r.phone}`, text: r.phone }), ` · ${r.email}`,
+        el("b", { text: r.name }), " · ", contact(r.phone, "tel"), " · ", contact(r.email, "mailto"),
       ]),
       r.queued_reason ? el("div", { class: "body-text", text: r.queued_reason }) : null,
       r.error ? el("div", { class: "body-text", text: `Square said: ${r.error}` }) : null,
@@ -387,7 +437,7 @@
             h.total_cents ? [" · ", el("b", { text: money(h.total_cents) })] : "",
           ].flat()),
           h.name
-            ? el("div", { class: "card-meta" }, [el("b", { text: h.name }), " · ", el("a", { href: `tel:${h.phone}`, text: h.phone }), ` · ${h.email}`])
+            ? el("div", { class: "card-meta" }, [el("b", { text: h.name }), " · ", contact(h.phone, "tel"), " · ", contact(h.email, "mailto")])
             : el("div", { class: "card-meta muted", text: "Anonymous: still on the date or extras step" }),
           el("div", {
             class: "card-meta small muted",
@@ -399,6 +449,181 @@
       )
     );
   }
+
+  // ---------- manual booking entry ----------
+  // The form is built from /api/catalog and /api/availability, so the packages, add-ons, limits and open
+  // dates are the server's own and cannot drift from what the funnel prices against. The total is quoted
+  // by /api/quote on every change rather than multiplied here: the client never computes a price.
+
+  let catalog = null;
+  const manual = { quoting: 0 };
+
+  function field(label, control, hint) {
+    return el("div", { class: "field" }, [el("label", { for: control.id, text: label }), control, hint ? el("p", { class: "field-hint", text: hint }) : null]);
+  }
+
+  function input(id, attrs) {
+    return el("input", Object.assign({ id, name: id }, attrs));
+  }
+
+  async function openManual() {
+    const dialog = $("manual-modal");
+    const form = $("manual-form");
+    form.replaceChildren(el("div", { class: "spinner", role: "status", "aria-label": "Loading" }));
+    if (!dialog.open) dialog.showModal();
+    const [catalogRes, availabilityRes] = await Promise.all([
+      catalog ? Promise.resolve({ status: 200, data: catalog }) : api("/api/catalog"),
+      api("/api/availability"),
+    ]);
+    if (catalogRes.status !== 200 || availabilityRes.status !== 200) {
+      form.replaceChildren(el("p", { class: "notice error", text: "Couldn't load the packages and dates. Close this and try again." }));
+      return;
+    }
+    catalog = catalogRes.data;
+    const open = availabilityRes.data.days.filter((d) => d.status === "open");
+    form.replaceChildren(...manualFields(open));
+    if (!open.length) return;
+    quoteManual();
+    form.querySelector("#m-slot").focus();
+  }
+
+  function manualFields(open) {
+    if (!open.length) {
+      return [el("p", { class: "notice", text: "No open dates. Unblock a date or cancel a booking first." })];
+    }
+    const slot = el("select", { id: "m-slot", name: "m-slot", required: true },
+      open.map((d) => el("option", { value: String(d.slot_id), text: `${d.day_label} · ${d.time_label}` })));
+    const pkg = el("select", { id: "m-package", name: "m-package", onchange: quoteManual },
+      catalog.packages.map((p) => el("option", { value: p.key, text: `${p.label} — ${money(p.price_cents)}, up to ${p.included_kids} kids` })));
+    const kids = input("m-kids", { type: "number", inputmode: "numeric", min: catalog.min_kids, max: catalog.max_kids, value: 15, required: true, onchange: quoteManual });
+
+    return [
+      field("Date", slot),
+      field("Package", pkg),
+      field("Kids", kids, `Over the included headcount is ${money(catalog.additional_kid_cents)} each.`),
+      el("fieldset", { class: "manual-addons" }, [
+        el("legend", { text: "Add-ons" }),
+        ...catalog.addons.map(addonControl),
+      ]),
+      el("div", { class: "form-grid" }, [
+        field("Kid's name", input("m-kid-name", { type: "text", maxlength: 80, autocomplete: "off" })),
+        field("Kid's age", input("m-kid-age", { type: "number", inputmode: "numeric", min: 1, max: 18 })),
+        field("Parent first name", input("m-first", { type: "text", maxlength: 80, required: true, autocomplete: "off" })),
+        field("Parent last name", input("m-last", { type: "text", maxlength: 80, required: true, autocomplete: "off" })),
+        field("Phone", input("m-phone", { type: "tel", required: true, autocomplete: "off" })),
+        field("Email", input("m-email", { type: "email", required: true, autocomplete: "off" })),
+      ]),
+      field("Notes", el("textarea", { id: "m-notes", name: "m-notes", rows: 2, maxlength: 500, placeholder: "Theme, favorite game, anything the host should know" })),
+      el("fieldset", { class: "manual-deposit" }, [
+        el("legend", { text: `Deposit (${money(catalog.deposit_cents)})` }),
+        depositChoice("collected", "Collected in person", true),
+        depositChoice("waived", "Waived — nothing taken", false),
+      ]),
+      el("div", { class: "manual-total", id: "m-total" }),
+      el("div", { id: "m-error", role: "alert" }),
+      el("div", { class: "manual-actions" }, [
+        el("button", { type: "button", class: "btn btn-ghost", text: "Cancel", onclick: closeManual }),
+        el("button", { type: "submit", class: "btn btn-primary", id: "m-submit", text: "Add booking" }),
+      ]),
+    ];
+  }
+
+  function addonControl(addon) {
+    const id = `m-addon-${addon.key}`;
+    const control = addon.has_quantity
+      ? input(id, { type: "number", inputmode: "numeric", min: 0, max: catalog.max_pack_quantity, value: 0, class: "addon-qty", onchange: quoteManual })
+      : input(id, { type: "checkbox", class: "addon-check", onchange: quoteManual });
+    control.dataset.addon = addon.key;
+    return el("label", { class: "manual-addon", for: id }, [
+      control,
+      el("span", { class: "manual-addon-name", text: addon.label }),
+      el("span", { class: "manual-addon-price", text: `+${money(addon.price_cents)}` }),
+    ]);
+  }
+
+  function depositChoice(value, label, checked) {
+    const id = `m-deposit-${value}`;
+    return el("label", { class: "manual-radio", for: id }, [
+      el("input", { type: "radio", id, name: "m-deposit", value, checked }),
+      el("span", { text: label }),
+    ]);
+  }
+
+  function readAddons() {
+    const addons = {};
+    document.querySelectorAll("#manual-form [data-addon]").forEach((node) => {
+      const quantity = node.type === "checkbox" ? (node.checked ? 1 : 0) : parseInt(node.value, 10) || 0;
+      if (quantity > 0) addons[node.dataset.addon] = quantity;
+    });
+    return addons;
+  }
+
+  function manualPayload() {
+    const age = $("m-kid-age").value.trim();
+    return {
+      slot_id: parseInt($("m-slot").value, 10),
+      package: $("m-package").value,
+      kids: parseInt($("m-kids").value, 10),
+      addons: readAddons(),
+      first_name: $("m-first").value.trim(),
+      last_name: $("m-last").value.trim(),
+      phone: $("m-phone").value.trim(),
+      email: $("m-email").value.trim(),
+      kid_name: $("m-kid-name").value.trim() || null,
+      kid_age: age === "" ? null : parseInt(age, 10),
+      notes: $("m-notes").value.trim() || null,
+      deposit_collected: document.querySelector("input[name='m-deposit']:checked").value === "collected",
+    };
+  }
+
+  // Every change re-quotes on the server. Answers are sequenced so a slow one cannot land after a newer
+  // one and show a price for a party the owner has already changed.
+  async function quoteManual() {
+    const total = $("m-total");
+    if (!total) return;
+    const ticket = ++manual.quoting;
+    const { status, data } = await api("/api/quote", {
+      method: "POST",
+      body: { package: $("m-package").value, kids: parseInt($("m-kids").value, 10) || 0, addons: readAddons() },
+    });
+    if (ticket !== manual.quoting) return;
+    if (status !== 200) {
+      total.replaceChildren(el("span", { class: "manual-total-bad", text: detailText(data) }));
+      return;
+    }
+    const collected = document.querySelector("input[name='m-deposit']:checked").value === "collected";
+    const paid = collected ? data.deposit_cents : 0;
+    total.replaceChildren(
+      el("span", { class: "manual-total-sum" }, ["Total ", el("b", { text: money(data.total_cents) })]),
+      el("span", { class: "manual-total-due", text: `${money(data.total_cents - paid)} due at the party` })
+    );
+  }
+
+  function closeManual() {
+    const dialog = $("manual-modal");
+    if (dialog.open) dialog.close();
+  }
+
+  $("manual-modal-close").addEventListener("click", closeManual);
+  $("manual-form").addEventListener("change", (event) => {
+    if (event.target.name === "m-deposit") quoteManual();
+  });
+  $("manual-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = $("m-submit");
+    $("m-error").replaceChildren();
+    submit.disabled = true;
+    const { status, data } = await guarded("/api/admin/bookings", { method: "POST", body: manualPayload() });
+    submit.disabled = false;
+    if (status === 201) {
+      closeManual();
+      show("bookings");
+      counts();
+      return;
+    }
+    if (status === 401) return closeManual();
+    $("m-error").replaceChildren(el("p", { class: "notice error", text: detailText(data, "Couldn't add the booking.") }));
+  });
 
   const TABS = { bookings, holds, refunds, requests, flags, dates, notifications, leads, waitlist };
 
