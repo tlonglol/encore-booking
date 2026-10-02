@@ -232,6 +232,8 @@
     ui.popover = null;
     ui.policyOpen = false;
     ui.notesOpen = false;
+    // A step change outlives any keyboard that was up when it started.
+    tuckSheet(false);
     save();
     if (step === "date") startGridPoll();
     else stopGridPoll();
@@ -1344,7 +1346,7 @@
     );
   }
 
-  function setAddon(key, quantity) {
+  function setAddon(key, quantity, event) {
     const addon = catalogAddon(key);
     const dropsReel = key === "tournament" && !quantity && Boolean(draft.addons.highlight_reel);
     const cents = addon.price_cents + (dropsReel ? catalogAddon("highlight_reel").price_cents : 0);
@@ -1353,6 +1355,11 @@
     else delete draft.addons[key];
     if (key === "tournament" && !quantity) delete draft.addons.highlight_reel;
     syncSwitches();
+    // A tapped toggle keeps focus, and iOS brings its bottom chrome back for a focused control near the foot
+    // of the screen. The flip already reads from aria-checked, so dropping focus loses nothing. Only for a
+    // real tap: event.detail is 0 for a click synthesised from Space or Enter, where blurring would strand
+    // the keyboard's place in the grid.
+    if (event && event.detail > 0 && event.currentTarget && event.currentTarget.blur) event.currentTarget.blur();
     requote();
     renderRail();
     touch();
@@ -1480,7 +1487,7 @@
             "data-key": addon.key,
             "aria-checked": String(Boolean(quantity)),
             disabled: Boolean(blocked),
-            onclick: () => setAddon(addon.key, draft.addons[addon.key] ? 0 : 1),
+            onclick: (event) => setAddon(addon.key, draft.addons[addon.key] ? 0 : 1, event),
           },
           [
             iconBox,
@@ -1527,6 +1534,75 @@
     if ($("notes")) $("notes").addEventListener("blur", rememberForm);
     renderSummary();
     mountCard();
+  }
+
+  // ---------- the summary sheet and the on-screen keyboard ----------
+  // On Info + Deposit the sheet is at its tallest: the lead amount, the policy line, the pay button and its
+  // caption. iOS opens the keyboard by shrinking the visual viewport without moving a fixed element, so the
+  // sheet stayed pinned over what was left and covered the very field being typed into. While a field on this
+  // step has focus the sheet tucks down to its header row; blur, or the keyboard going away, brings it back.
+  //
+  // Nothing here trusts where the browser has actually painted a fixed element mid-animation: the sheet is
+  // made small enough that it cannot cover a field, and the visual viewport is only ever read to decide
+  // whether the keyboard is still up.
+  const UNTUCK_MS = 120;
+  let untuckTimer = null;
+
+  function tuckSheet(on) {
+    clearTimeout(untuckTimer);
+    $("rail").classList.toggle("tucked", on);
+  }
+
+  // Moving between two fields fires focusout then focusin, so the sheet waits a beat before coming back
+  // rather than flickering on every hop. A focus that lands anywhere cancels the pending restore.
+  function scheduleUntuck() {
+    clearTimeout(untuckTimer);
+    untuckTimer = setTimeout(() => tuckSheet(false), UNTUCK_MS);
+  }
+
+  function typeable(node) {
+    return Boolean(node && node.matches && node.matches("input, textarea, select"));
+  }
+
+  // The keyboard is up when the visual viewport is meaningfully shorter than the layout viewport. The slack
+  // absorbs the browser's own collapsing chrome, which is nowhere near the height of a keyboard.
+  function keyboardUp() {
+    const view = window.visualViewport;
+    return Boolean(view) && window.innerHeight - view.height > 120;
+  }
+
+  // The card lives in Square's iframe, so its focus arrives as an event rather than as focusin, and it is the
+  // one field far enough down the page to need centring once the keyboard and the sheet have settled.
+  function centerCardBlock() {
+    setTimeout(() => {
+      const block = $("card-block");
+      if (block) block.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
+    }, 300);
+  }
+
+  function watchKeyboard() {
+    const main = document.querySelector(".funnel-main");
+    main.addEventListener("focusin", (event) => {
+      if (onPaymentStep() && typeable(event.target)) tuckSheet(true);
+    });
+    main.addEventListener("focusout", (event) => {
+      if (typeable(event.target)) scheduleUntuck();
+    });
+    window.EncoreCard.onFocusChange(
+      () => {
+        if (!onPaymentStep()) return;
+        tuckSheet(true);
+        centerCardBlock();
+      },
+      () => scheduleUntuck()
+    );
+    if (window.visualViewport) {
+      // The keyboard going away is the one signal that outranks focus: iOS can dismiss it while leaving the
+      // field focused, and a sheet left tucked with no keyboard up is a sheet the parent cannot use.
+      window.visualViewport.addEventListener("resize", () => {
+        if (!keyboardUp()) tuckSheet(false);
+      });
+    }
   }
 
   // The card fields live in Square's iframes inside our page, so the parent never leaves the funnel.
@@ -2059,6 +2135,7 @@
       const open = rail.classList.toggle("open");
       $("rail-handle").setAttribute("aria-expanded", String(open));
     });
+    watchKeyboard();
     $("compare-close").addEventListener("click", () => $("compare").close());
     $("compare").addEventListener("click", (event) => { if (event.target === $("compare")) $("compare").close(); });
     $("waitlist-modal-close").addEventListener("click", () => closeWaitlistModal());

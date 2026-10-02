@@ -1917,7 +1917,18 @@ body.has-ribbon { --ribbon-h: 30px; }
 /* The headers carry the safe-area inset when they are the top of the page; the ribbon does it instead. */
 body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbon-h); }
 .ribbon-short { display: none; }
-@media (max-width: 560px) {
+/* One line on a phone, and short enough to stay one line: the notice is a standing condition, not a banner
+   worth two rows of a small screen. */
+@media (max-width: 640px) {
+  body.has-ribbon { --ribbon-h: 28px; }
+  .test-ribbon {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    overflow: hidden;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
   .ribbon-long { display: none; }
   .ribbon-short { display: inline; }
 }
@@ -2159,4 +2170,21 @@ body.scroll-locked { overflow: hidden; }
 
   #advance { box-shadow: 0 0 8px color-mix(in srgb, var(--tier) 16%, transparent); }
   #advance:disabled { box-shadow: none; }
+}
+
+/* ── The summary sheet on a phone: a height cap, and getting out of the keyboard's way ──
+   The sheet is a bottom sheet from 0 to 768px; above that it is the desktop rail and none of this applies. */
+@media (max-width: 768px) {
+  /* Expanded, it never takes more than 70% of the screen: the step behind it stays legible on every step,
+     whatever the rail has to say. The foot (amount and button) keeps its height and the steps list scrolls. */
+  .rail { display: flex; flex-direction: column; max-height: 70vh; max-height: 70dvh; }
+  .rail-handle, .rail-foot { flex: none; }
+  .rail-body { max-height: none; }
+  .rail.open .rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+}
+
+@media (max-width: 640px) {
+  /* Tucked: the header row and nothing else, so a focused field is never behind the sheet. The open state is
+     a separate class, so whatever the sheet was showing comes back when the keyboard goes. */
+  .rail.tucked .rail-body, .rail.tucked .rail-foot { display: none; }
 }

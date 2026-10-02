@@ -16,6 +16,18 @@
 
   const state = { appId: "", locationId: "", environment: "sandbox", loading: null, card: null, host: null };
 
+  // Square renders the inputs inside its own cross-origin iframes, so a focusin listener on our page never
+  // hears about them: these two events are the only way to know the parent is typing their card. They fire
+  // per field, so moving from the number to the expiry is a Removed immediately followed by an Added, and the
+  // funnel debounces them rather than tucking and untucking the sheet between fields.
+  // https://developer.squareup.com/reference/sdks/web/payments/enums/CardInputEventTypes
+  const focus = { enter: null, leave: null };
+
+  function onFocusChange(enter, leave) {
+    focus.enter = enter;
+    focus.leave = leave;
+  }
+
   async function configure() {
     try {
       const response = await fetch(origin + "/api/config");
@@ -109,6 +121,12 @@
     if (!window.Square) return false;
     const payments = window.Square.payments(state.appId, state.locationId);
     const card = await payments.card({ style: styles() });
+    card.addEventListener("focusClassAdded", function () {
+      if (focus.enter) focus.enter();
+    });
+    card.addEventListener("focusClassRemoved", function () {
+      if (focus.leave) focus.leave();
+    });
     await card.attach(host);
     state.card = card;
     state.host = host;
@@ -146,5 +164,5 @@
     return Boolean(state.appId && state.locationId);
   }
 
-  window.EncoreCard = { mount: mount, destroy: destroy, tokenize: tokenize, enabled: enabled };
+  window.EncoreCard = { mount: mount, destroy: destroy, tokenize: tokenize, enabled: enabled, onFocusChange: onFocusChange };
 })();
