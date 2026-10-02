@@ -1,0 +1,14 @@
+# What the Lambda runtime needs, at the same pins as requirements.txt.
+# tests/test_lambda_bundle.py fails if a pin here disagrees with requirements.txt, or if app/ grows an
+# import that is not listed here, so a new dependency cannot be left out of the deployment zip.
+# Not here on purpose: uvicorn (the Lambda runtime is the server), alembic (migrations run from the
+# laptop against Neon's direct string), pytest.
+fastapi==0.142.1
+SQLAlchemy==2.1.1
+psycopg[binary]==3.3.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+phonenumbers==9.0.40
+httpx==0.28.1
+mangum==0.22.0

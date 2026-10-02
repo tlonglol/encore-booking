@@ -1,0 +1,60 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored and must stay that way:
+# every value below reaches the Lambda as an environment variable and none of them belong in git.
+
+region  = "us-east-1"
+project = "encore-booking"
+
+# Empty on the first apply (the Function URL does not exist yet). After that apply, set this to the
+# function_url output with no trailing slash and apply again, then register
+# <public_base_url>/api/webhooks/square in the Square dashboard.
+public_base_url = ""
+
+# Neon POOLED connection string (the -pooler host). Alembic migrations run from the laptop against
+# Neon's DIRECT string instead; the Lambda never runs a migration.
+database_url = "postgresql+psycopg://USER:PASSWORD@ep-xxxx-pooler.us-east-1.aws.neon.tech/encore?sslmode=require"
+
+# Admin page password, and the secret that signs the admin session cookie (long and random).
+admin_password = "PICK_SOMETHING_REAL"
+session_secret = "PASTE_64_RANDOM_HEX_CHARS"
+
+# Square SANDBOX until the owner approves going live. Live keys never enter this repo or its history.
+square_environment           = "sandbox"
+square_access_token          = "PASTE_SANDBOX_ACCESS_TOKEN"
+square_location_id           = "PASTE_SANDBOX_LOCATION_ID"
+square_webhook_signature_key = "PASTE_WEBHOOK_SIGNATURE_KEY"
+
+# The one-tap demo reset deletes bookings. True on the demo deploy, false otherwise. It refuses
+# outright against production Square credentials regardless.
+demo_reset_enabled = true
+
+# Twilio trial: leave any of the three empty and texts are logged instead of sent, which the admin
+# message log shows as "logged". OWNER_PHONE must be a verified number on a trial account.
+twilio_account_sid = ""
+twilio_auth_token  = ""
+twilio_from_number = ""
+owner_phone        = "+15555550100"
+
+# Optional owner channel, and the zero-cost one before A2P 10DLC registration clears. The URL is the
+# credential.
+discord_webhook_url = ""
+
+# Parent confirmation email. Leave any of the four empty and the email is logged instead of sent.
+smtp_host     = ""
+smtp_port     = 587
+smtp_username = ""
+smtp_password = ""
+email_from    = "Encore Esports <bookings@example.com>"
+
+google_review_url = ""
+
+# Cloudflare Turnstile on the Confirm action. Off means the funnel loads no Cloudflare script at all.
+turnstile_enabled    = false
+turnstile_site_key   = ""
+turnstile_secret_key = ""
+
+# Keep-warm ping every 5 minutes so the first date tap of the demo is not a cold start.
+warmer_enabled = true
+
+# Business rules keep their app/config.py defaults on the deploy. Override one without a code change:
+# extra_env = { MIN_LEAD_DAYS = "3", WEEKEND_DEFAULT = "request" }
+extra_env = {}

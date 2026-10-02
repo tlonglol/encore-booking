@@ -3,3 +3,12 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# The Lambda deployment package, rebuilt by scripts/build_lambda.sh before every apply.
+build/
+# Terraform state and secrets are gitignored again inside infra/, belt and braces.
+infra/terraform.tfvars
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tfplan
+.playwright-mcp/

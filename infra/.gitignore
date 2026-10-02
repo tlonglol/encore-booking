@@ -1,0 +1,10 @@
+# Secrets and state, never committed.
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+# A saved plan bakes in the variable values, secrets included.
+tfplan
+*.tfplan
