@@ -6,6 +6,14 @@
   window.EncoreShell.mountNav({ accent: "ADMIN", ctaTag: "button", ctaId: "logout", ctaLabel: "Log out", ctaHidden: true });
   let current = "bookings";
 
+  function notesCallout(notes) {
+    if (!notes) return null;
+    return el("div", { class: "notes-callout" }, [
+      el("span", { class: "notes-label", text: "Notes:" }),
+      notes,
+    ]);
+  }
+
   const FLAG_TEXT = {
     paid_after_expiry: "Paid after hold expired: call parent",
     duplicate_payment: "Second payment on a booked order: refund in Square",
@@ -123,7 +131,7 @@
             el("b", { text: b.name }), " · ", contact(b.phone, "tel"), " · ", contact(b.email, "mailto"),
           ]),
           b.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + b.birthday_line })]) : null,
-          b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
+          notesCallout(b.notes),
           el("div", {
             class: "card-meta small muted",
             text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}`
@@ -164,7 +172,7 @@
             el("b", { text: r.name }), " · ", contact(r.phone, "tel"), " · ", contact(r.email, "mailto"),
           ]),
           r.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + r.birthday_line })]) : null,
-          r.notes ? el("div", { class: "body-text", text: `Notes: ${r.notes}` }) : null,
+          notesCallout(r.notes),
           el("div", { class: "card-meta small muted", text: `Requested ${when(r.created_at)} · call or text the parent to confirm` }),
         ])
       )

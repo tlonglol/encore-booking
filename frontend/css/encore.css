@@ -797,6 +797,24 @@ img { max-width: 100%; }
 .pill.warn { color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
 .pill.bad { color: #ffb4b6; border-color: rgba(229, 72, 77, 0.5); }
 .body-text { font-size: 13px; color: var(--gray); margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notes-callout {
+  font-size: 14px;
+  color: var(--white);
+  margin-top: 6px;
+  padding: 2px 10px;
+  border-left: 3px solid var(--warn);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notes-callout .notes-label {
+  font-family: var(--condensed);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-right: 4px;
+}
 .login { max-width: 380px; margin: 4rem auto; }
 /* Phone numbers and emails are the owner's job on a phone: one tap to call or write, and a tap target
    that survives a thumb. The underline is what says it is tappable without turning the card into links. */
