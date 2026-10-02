@@ -34,7 +34,10 @@
       '<span class="pill-action-long" id="pill-action-long"></span>' +
       '<span class="pill-action-short" id="pill-action-short"></span>' +
       "</button>";
-    document.body.appendChild(node);
+    // Directly after the header: on a phone the pill is a strip in the page flow, and flow order is DOM order.
+    const header = document.querySelector(".banner, .nav");
+    if (header) header.after(node);
+    else document.body.appendChild(node);
     placeBelowHeader();
     window.addEventListener("resize", placeBelowHeader);
     return node;
@@ -46,7 +49,10 @@
     if (!node) return;
     const header = document.querySelector(".banner, .nav");
     // The header's bottom edge, not its height: the test-mode ribbon sits above it and shifts it down.
-    node.style.top = `${(header ? header.getBoundingClientRect().bottom : 0) + 10}px`;
+    node.style.setProperty("--pill-top", `${(header ? header.getBoundingClientRect().bottom : 0) + 10}px`);
+    // The phone strip sticks where the header sticks, so it is measured from layout and not from scroll.
+    const stick = header ? parseFloat(getComputedStyle(header).top) + header.getBoundingClientRect().height : 0;
+    node.style.setProperty("--pill-stick", `${stick}px`);
   }
 
   // seconds null means "a hold, but the server has not said how long is left yet".

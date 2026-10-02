@@ -1770,7 +1770,7 @@ body.has-pill { --pill-clear: 52px; }
 /* ── Hold pill: floats over whichever header the page has, and restyles neither ── */
 .hold-pill {
   position: fixed;
-  top: 78px;
+  top: var(--pill-top, 78px);
   /* Anchored right, so it keeps a real margin from the edge even on a phone with a notch. */
   right: calc(1rem + env(safe-area-inset-right, 0px));
   /* Shrink-to-fit with no cap overflows past its own right edge once the content outgrows the screen,
@@ -1851,18 +1851,25 @@ body.has-pill { --pill-clear: 52px; }
   .pill-time { display: none; }
 }
 
-/* Phone: docked under the header, full width less its margins, and compacted. */
-@media (max-width: 560px) {
+/* Phone: a slim strip in the page flow, stuck directly under the header. It pushes content down instead of
+   floating over it, so nothing is ever covered while a hold is active. */
+@media (max-width: 640px) {
   .hold-pill {
-    left: calc(0.75rem + env(safe-area-inset-left, 0px));
-    right: calc(0.75rem + env(safe-area-inset-right, 0px));
+    position: sticky;
+    top: var(--pill-stick, 0px);
+    left: auto;
+    right: auto;
     max-width: none;
+    height: 40px;
+    box-sizing: border-box;
     justify-content: center;
-    border-radius: 10px;
-    padding: 8px 12px;
+    padding: 0 calc(1rem + env(safe-area-inset-right, 0px)) 0 calc(1rem + env(safe-area-inset-left, 0px));
+    border: 0;
+    border-bottom: 1px solid var(--border-blue);
+    border-radius: 0;
+    box-shadow: none;
   }
-  /* Docked across the top here, so the page below starts under it rather than behind it. */
-  body.has-pill .funnel, body.has-pill .wrap { padding-top: calc(1.5rem + var(--pill-clear)); }
+  body.has-pill { --pill-clear: 0px; }
   .pill-when { display: none; }
   .pill-when-short { display: inline; }
   .pill-action-long { display: none; }
@@ -2117,3 +2124,39 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
 .waitlist-modal-confirm { font-family: var(--body); font-size: 15px; color: var(--white); margin: 0 1.6rem 1rem 0; }
 
 body.scroll-locked { overflow: hidden; }
+
+/* ── Phone funnel: a stable summary bar, quiet toggles, a little more air ── */
+.addon-desc.stacked { display: grid; }
+.addon-desc.stacked > span { grid-area: 1 / 1; }
+.opt:not(.disabled) .desc-locked, .opt.disabled .desc-copy { visibility: hidden; }
+
+@media (max-width: 640px) {
+  /* The bar is the same height whatever the toggles say: one nowrap row, the delta chip out of the flow,
+     and the DETAILS button a fixed width so "1 item" and "12 items" read the same size. */
+  .rail-money { flex-wrap: nowrap; align-items: center; min-height: 30px; }
+  .rail-total-line { flex: none; }
+  .rail-today { min-width: 0; white-space: nowrap; }
+  .rail-details { flex: none; min-width: 8.75rem; text-align: center; white-space: nowrap; }
+  .rail-delta {
+    position: absolute;
+    right: 1.25rem;
+    bottom: calc(100% + 0.5rem);
+    max-width: calc(100vw - 2.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    border: 1px solid var(--border-blue);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  .rail-delta.add { background: #0c2440; }
+  .rail-delta.remove { background: #1c1c1c; border-color: var(--border); }
+
+  .opt-grid { gap: 1rem; }
+  .headcount { margin-bottom: 1.5rem; }
+  .tabs-wrap { margin-bottom: 1.75rem; }
+  .card-block { margin-top: 1.75rem; }
+  .form-grid { gap: 1.2rem; }
+
+  #advance { box-shadow: 0 0 8px color-mix(in srgb, var(--tier) 16%, transparent); }
+  #advance:disabled { box-shadow: none; }
+}

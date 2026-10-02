@@ -1124,9 +1124,27 @@
       native,
     ]);
 
-    // Clicking the typing area puts the caret in the nearest box rather than doing nothing.
-    wrap.querySelector(".seg-fields").addEventListener("click", (event) => {
-      if (!event.target.closest(".seg")) boxes[0].focus();
+    // No dead zones: the padding, the slashes and the gap before the calendar all start typing. A tap that lands
+    // on a segment already holding a value is left to the browser, so that one segment can be edited on its own.
+    const inside = (box, event) => {
+      const rect = box.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    };
+    wrap.addEventListener("mousedown", (event) => {
+      // Keeps a focused box from blurring on its way to the next one.
+      if (!event.target.closest(".seg, .seg-cal")) event.preventDefault();
+    });
+    wrap.addEventListener("click", (event) => {
+      if (event.target.closest(".seg-cal")) return;
+      if (boxes.some((box) => box.value && inside(box, event))) return;
+      const empty = boxes.find((box) => !box.value);
+      if (empty) return empty.focus();
+      // Everything is filled and the tap missed every box: the nearest one, by distance across the field.
+      const gap = (box) => {
+        const rect = box.getBoundingClientRect();
+        return Math.abs(event.clientX - (rect.left + rect.right) / 2);
+      };
+      boxes.reduce((best, box) => (gap(box) < gap(best) ? box : best)).focus();
     });
     return wrap;
   }
@@ -1334,7 +1352,7 @@
     if (quantity > 0) draft.addons[key] = quantity;
     else delete draft.addons[key];
     if (key === "tournament" && !quantity) delete draft.addons.highlight_reel;
-    renderOptions();
+    syncSwitches();
     requote();
     renderRail();
     touch();
@@ -1412,6 +1430,20 @@
     return card;
   }
 
+  // A toggle flips the cards in place. Rebuilding them destroyed the button under the finger, which drops its
+  // focus and lets the browser adjust the scroll, and on a phone that brings the URL bar back.
+  function syncSwitches() {
+    document.querySelectorAll("#opt-grid button[data-key]").forEach((button) => {
+      const addon = catalogAddon(button.dataset.key);
+      const on = Boolean(draft.addons[addon.key]);
+      const blocked = Boolean(addon.requires && !draft.addons[addon.requires]);
+      button.classList.toggle("on", on);
+      button.classList.toggle("disabled", blocked);
+      button.disabled = blocked;
+      button.setAttribute("aria-checked", String(on));
+    });
+  }
+
   function renderOptions() {
     const grid = $("opt-grid");
     if (!grid) return;
@@ -1422,10 +1454,15 @@
         const blocked = addon.requires && !draft.addons[addon.requires];
         const quantity = draft.addons[addon.key] || 0;
         const iconBox = el("div", { class: "addon-icon", "aria-hidden": "true", text: copy.icon });
-        const body = el("div", { class: "addon-body" }, [
-          el("div", { class: "addon-name", text: addon.label }),
-          el("div", { class: "addon-desc", text: blocked ? "Add Tournament + Livestream first." : copy.short }),
-        ]);
+        // An add-on that needs another one carries both lines stacked in one cell, so the card is the same
+        // height whether or not it is unlocked and flipping the other toggle never moves the page.
+        const desc = addon.requires
+          ? el("div", { class: "addon-desc stacked" }, [
+              el("span", { class: "desc-copy", text: copy.short }),
+              el("span", { class: "desc-locked", text: "Add Tournament + Livestream first." }),
+            ])
+          : el("div", { class: "addon-desc", text: copy.short });
+        const body = el("div", { class: "addon-body" }, [el("div", { class: "addon-name", text: addon.label }), desc]);
         if (included.indexOf(addon.key) >= 0) {
           return el("div", { class: "opt on included" }, [
             iconBox,
@@ -1440,9 +1477,10 @@
             type: "button",
             class: "opt" + (quantity ? " on" : "") + (blocked ? " disabled" : ""),
             role: "switch",
+            "data-key": addon.key,
             "aria-checked": String(Boolean(quantity)),
             disabled: Boolean(blocked),
-            onclick: () => setAddon(addon.key, quantity ? 0 : 1),
+            onclick: () => setAddon(addon.key, draft.addons[addon.key] ? 0 : 1),
           },
           [
             iconBox,
