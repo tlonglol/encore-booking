@@ -93,6 +93,25 @@
     }
   }
 
+  // Same pair, but browser-wide instead of per-tab. A hold outlives the tab it was made in: it runs for
+  // 15 minutes on the server, and every tab has to know about it or the browser will hold two dates at once.
+  function keep(key, value) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      /* storage unavailable: the page still works, it just forgets between tabs */
+    }
+  }
+
+  function kept(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || "null");
+    } catch (error) {
+      return null;
+    }
+  }
+
   // Parses what's typed into a count field. null means "empty, still typing": the caller keeps the old value.
   // Anything that isn't all digits falls back to the previous value; digits are clamped to [min, max].
   function readCount(raw, previous, min, max) {
@@ -129,6 +148,8 @@
     el: el,
     store: store,
     recall: recall,
+    keep: keep,
+    kept: kept,
     readCount: readCount,
     bindCount: bindCount,
   };

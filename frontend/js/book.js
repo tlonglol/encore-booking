@@ -1,9 +1,12 @@
 // The booking funnel: one shell, four steps that swap in the left block.
 // Two doors in (package-led and date-led), one merge point at Extras.
 (function () {
-  const { api, detailText, money, el, store, recall, bindCount } = window.Encore;
+  const { api, detailText, money, el, store, recall, keep, kept, bindCount } = window.Encore;
   const C = window.EncoreContent;
   const KEY = "encore.draft";
+  // The hold itself is browser-wide, not per-tab: see save() and restore().
+  const HOLD_KEY = "encore.hold";
+  const HOLD_FIELDS = ["mode", "holdId", "slotId", "date", "dayLabel", "timeLabel", "expiresAt", "step"];
   const STEPS = ["date", "plan", "addons", "info"];
   // Display copy only, mirroring "feeds about 10 kids" on the Pizza Pack card; never used for pricing.
   const KIDS_PER_PIZZA_PACK = 10;
@@ -62,16 +65,35 @@
     const saved = {};
     DRAFT_KEYS.forEach((key) => { saved[key] = draft[key]; });
     store(KEY, saved);
+    saveHold();
+  }
+
+  // The contact details stay in the tab that typed them; only the hold travels, because every tab in this
+  // browser has to know a date is already being held or confirming another one would hold a second date.
+  function saveHold() {
+    if (!draft.holdId) return keep(HOLD_KEY, null);
+    const pointer = {};
+    HOLD_FIELDS.forEach((key) => { pointer[key] = draft[key]; });
+    keep(HOLD_KEY, pointer);
   }
 
   function restore() {
     const saved = recall(KEY);
-    if (!saved) return;
-    DRAFT_KEYS.forEach((key) => {
-      if (saved[key] !== undefined && saved[key] !== null) draft[key] = saved[key];
+    if (saved) {
+      DRAFT_KEYS.forEach((key) => {
+        if (saved[key] !== undefined && saved[key] !== null) draft[key] = saved[key];
+      });
+      draft.addons = draft.addons || {};
+      draft.contact = draft.contact || {};
+    }
+    // A new tab has no draft of its own, but the browser may still be holding a date. Boot checks it with
+    // the server, so a stale pointer costs one request and is dropped.
+    if (draft.holdId) return;
+    const pointer = kept(HOLD_KEY);
+    if (!pointer || !pointer.holdId) return;
+    HOLD_FIELDS.forEach((key) => {
+      if (pointer[key] !== undefined && pointer[key] !== null) draft[key] = pointer[key];
     });
-    draft.addons = draft.addons || {};
-    draft.contact = draft.contact || {};
   }
 
   function clearDraft() {

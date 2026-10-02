@@ -2,8 +2,8 @@
 // The booking funnel owns the clock and drives this as a renderer; every other page gets the standalone
 // watcher at the bottom of this file, which reads the same draft and asks the server for the time left.
 (function () {
-  const { api, clock, recall } = window.Encore;
-  const KEY = "encore.draft";
+  const { api, clock, keep, kept } = window.Encore;
+  const HOLD_KEY = "encore.hold";
   const LOW_SECONDS = 120;
   const EXPIRED_NOTICE_MS = 30000;
   const CLOCK_ICON =
@@ -74,7 +74,8 @@
   // The funnel drives the pill itself, from the clock it already owns.
   if (document.body && document.body.classList.contains("funnel-body")) return;
 
-  const draft = recall(KEY);
+  // Browser-wide, so the pill shows in a tab that never saw the funnel.
+  const draft = kept(HOLD_KEY);
   if (!draft || draft.mode !== "hold" || !draft.holdId || !draft.date) return;
 
   const step = draft.step || "info";
@@ -105,9 +106,11 @@
     return (label || "").replace(/^[A-Za-z]+,\s*/, "");
   }
 
+  // A hold that is finished, paid for or gone stops being this browser's business.
   function stop() {
     clearInterval(watch.timer);
     watch.timer = null;
+    keep(HOLD_KEY, null);
     hide();
   }
 
@@ -127,6 +130,7 @@
     }
     const { status, data } = await api("/api/availability");
     const day = status === 200 ? data.days.find((entry) => entry.date === draft.date) : null;
+    keep(HOLD_KEY, null);
     if (!day || day.status !== "open") return hide();
     render({
       seconds: null,
