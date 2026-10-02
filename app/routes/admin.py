@@ -129,9 +129,36 @@ def bookings(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "booked_at": row.created_at.isoformat(),
             "cancelled_at": row.cancelled_at.isoformat() if row.cancelled_at else None,
             "cancel_reason": row.cancel_reason,
+            "cancel_source": row.cancel_source,
+            "reschedule_count": row.reschedule_count,
+            "rescheduled_at": row.rescheduled_at.isoformat() if row.rescheduled_at else None,
+            "refund_status": row.refund_status,
             "full_refund": row.full_refund,
         }
         for row in admin_service.list_bookings(db)
+    ]
+
+
+@router.get("/holds", dependencies=[Depends(require_admin)])
+def holds(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Dates being held right now, newest first, so the owner can watch one happen during the demo."""
+    return [
+        {
+            "hold_id": str(row.id),
+            "created_at": row.created_at.isoformat(),
+            "expires_at": row.expires_at.isoformat(),
+            "seconds_remaining": row.seconds_remaining,
+            "package": PACKAGES[row.package].label if row.package else None,
+            "kids": row.kids,
+            "total_cents": row.total_cents,
+            "name": f"{row.first_name} {row.last_name}".strip() if row.first_name else None,
+            "phone": row.phone,
+            "email": row.email,
+            "client_ip": str(row.client_ip) if row.client_ip else None,
+            "reached_checkout": row.reached_checkout,
+            **_when(row.slot_starts_at),
+        }
+        for row in admin_service.list_active_holds(db)
     ]
 
 

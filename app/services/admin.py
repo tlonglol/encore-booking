@@ -32,9 +32,11 @@ def list_bookings(db: Session) -> list[Row]:
                        b.deposit_cents, b.paid_amount_cents, b.first_name, b.last_name, b.phone, b.email,
                        b.kid_name, b.kid_age, b.birthday, b.notes,
                        b.square_payment_id, b.created_at, b.cancelled_at, b.cancel_reason,
-                       b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund
+                       b.reschedule_count, b.rescheduled_at, b.cancel_source,
+                       b.event_starts_at - coalesce(b.cancelled_at, now()) >= interval '7 days' AS full_refund,
+                       (SELECT r.status FROM refunds r WHERE r.booking_id = b.id) AS refund_status
                 FROM bookings b
-                ORDER BY b.cancelled_at IS NOT NULL, b.event_starts_at
+                ORDER BY b.created_at DESC, b.id DESC
                 """
             )
         )
@@ -144,6 +146,27 @@ def reject_refund(db: Session, refund_id: int) -> bool:
     ).one_or_none()
     db.commit()
     return updated is not None
+
+
+def list_active_holds(db: Session) -> list[Row]:
+    """Dates being held right now, newest first. Expiry is lazy everywhere else in the system, so this asks
+    the same question availability does: pending_payment and not yet past its expiry."""
+    return list(
+        db.execute(
+            text(
+                """
+                SELECT h.id, h.created_at, h.expires_at,
+                       greatest(0, extract(epoch FROM h.expires_at - now()))::int AS seconds_remaining,
+                       h.package, h.kids, h.first_name, h.last_name, h.phone, h.email, h.total_cents,
+                       h.client_ip, h.checkout_url IS NOT NULL AS reached_checkout,
+                       s.starts_at AS slot_starts_at
+                FROM holds h JOIN slots s ON s.id = h.slot_id
+                WHERE h.status = 'pending_payment' AND h.expires_at > now()
+                ORDER BY h.created_at DESC
+                """
+            )
+        )
+    )
 
 
 def list_flags(db: Session) -> list[Row]:

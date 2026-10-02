@@ -75,7 +75,13 @@
           ]),
           b.birthday_line ? el("div", { class: "card-meta" }, [el("b", { text: "🎂 " + b.birthday_line })]) : null,
           b.notes ? el("div", { class: "body-text", text: `Notes: ${b.notes}` }) : null,
-          el("div", { class: "card-meta small muted", text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}` + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "") }),
+          el("div", {
+            class: "card-meta small muted",
+            text: `Code ${b.confirmation_code} · booked ${when(b.booked_at)}`
+              + (b.reschedule_count ? ` · moved ${b.reschedule_count}× (last ${when(b.rescheduled_at)})` : "")
+              + (b.cancelled_at ? ` · cancelled ${when(b.cancelled_at)} by ${b.cancel_source || "owner"}${b.cancel_reason ? ` (${b.cancel_reason})` : ""}` : "")
+              + (b.refund_status ? ` · refund ${b.refund_status}` : ""),
+          }),
           el("div", { class: "card-actions" }, [
             el("span", { class: "pill" + (b.full_refund ? " ok" : " warn"), text: b.full_refund ? "Full refund if cancelled" : "Inside 7 days: no refund, one reschedule" }),
             b.cancelled_at
@@ -309,14 +315,48 @@
     ]);
   }
 
-  const TABS = { bookings, refunds, requests, flags, dates, notifications, leads };
+  function countdown(seconds) {
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  async function holds() {
+    const { status, data } = await guarded("/api/admin/holds");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("No dates are being held right now."));
+    panel.replaceChildren(
+      ...data.map((h) =>
+        el("article", { class: "card" }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${h.day_label} · ${h.time_label}` }),
+            el("span", { class: "pill warn", text: `${countdown(h.seconds_remaining)} left` }),
+          ]),
+          el("div", { class: "card-meta" }, [
+            h.package ? el("b", { text: `${h.package}${h.kids ? ` · ${h.kids} kids` : ""}` }) : el("i", { text: "No package picked yet" }),
+            h.total_cents ? [" · ", el("b", { text: money(h.total_cents) })] : "",
+          ].flat()),
+          h.name
+            ? el("div", { class: "card-meta" }, [el("b", { text: h.name }), " · ", el("a", { href: `tel:${h.phone}`, text: h.phone }), ` · ${h.email}`])
+            : el("div", { class: "card-meta muted", text: "Anonymous: still on the date or extras step" }),
+          el("div", {
+            class: "card-meta small muted",
+            text: `Held since ${when(h.created_at)} · expires ${when(h.expires_at)}`
+              + (h.reached_checkout ? " · reached Square checkout" : "")
+              + (h.client_ip ? ` · ${h.client_ip}` : ""),
+          }),
+        ])
+      )
+    );
+  }
+
+  const TABS = { bookings, holds, refunds, requests, flags, dates, notifications, leads };
 
   async function counts() {
-    const [flagRes, noteRes, reqRes, refundRes] = await Promise.all([
+    const [flagRes, noteRes, reqRes, refundRes, holdRes] = await Promise.all([
       api("/api/admin/flags"),
       api("/api/admin/notifications"),
       api("/api/admin/requests"),
       api("/api/admin/refunds"),
+      api("/api/admin/holds"),
     ]);
     const openFlags = flagRes.status === 200 ? flagRes.data.filter((f) => !f.resolved_at).length : 0;
     const failed = noteRes.status === 200 ? noteRes.data.filter((n) => n.status === "failed").length : 0;
@@ -329,6 +369,7 @@
     $("failed-count").textContent = failed ? ` ${failed} failed` : "";
     $("request-count").textContent = fresh ? ` ${fresh}` : "";
     $("refund-count").textContent = waiting ? ` ${waiting}` : "";
+    $("hold-count").textContent = holdRes.status === 200 && holdRes.data.length ? ` ${holdRes.data.length}` : "";
   }
 
   function show(tab) {

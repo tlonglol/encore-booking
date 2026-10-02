@@ -17,6 +17,8 @@ from app.services.square import signature_valid
 
 CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 CODE_LENGTH = 10
+# Square answers PENDING while a card refund is in flight; these are the words that end the story.
+TERMINAL_REFUND_STATUSES = ("COMPLETED", "FAILED", "REJECTED")
 # 24 bytes: long enough that the manage page needs no login, short enough to sit in an SMS.
 MANAGE_TOKEN_BYTES = 24
 
@@ -145,7 +147,8 @@ def process_refund_event(db: Session, event: RefundEvent) -> WebhookResult:
     )
     db.commit()
     log.info("Square refund event %s outcome=%s status=%s", event.event_id, outcome, event.status)
-    return WebhookResult(200, outcome, refund_booking_id=booking_id if event.status == "COMPLETED" else None)
+    settled = event.status in TERMINAL_REFUND_STATUSES
+    return WebhookResult(200, outcome, refund_booking_id=booking_id if settled else None)
 
 
 def _recorded_hold(db: Session, payment_id: str) -> tuple[bool, uuid.UUID | None]:

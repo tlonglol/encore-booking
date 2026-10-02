@@ -23,9 +23,18 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 HOLD_STATUSES = ("pending_payment", "booked", "paid_after_expiry", "expired", "cancelled")
 REFUND_STATUSES = ("pending_approval", "pending", "completed", "failed", "rejected")
-NOTIFICATION_EVENTS = ("booked", "late_payment", "cancelled", "rescheduled", "addons_changed", "request")
-# A booking notice must survive Square redelivering the same event; the rest are single parent requests.
-CLAIMED_ONCE_EVENTS = ("booked", "late_payment")
+NOTIFICATION_EVENTS = (
+    "booked",
+    "late_payment",
+    "cancelled",
+    "rescheduled",
+    "addons_changed",
+    "refunded",
+    "request",
+)
+# Webhook-driven notices must survive Square redelivering the same event. The rest arrive on a single
+# parent request that has already decided it is allowed to happen, so they are recorded, not claimed.
+CLAIMED_ONCE_EVENTS = ("booked", "late_payment", "refunded")
 ACTIVE_HOLD_STATUSES = ("pending_payment", "booked")
 PACKAGES = ("standard", "plus", "premium")
 REQUEST_STATUSES = ("new", "approved", "declined", "expired", "converted")

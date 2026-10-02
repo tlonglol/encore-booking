@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Booking, Hold, Notification, PartyRequest, Slot
+from app.models import Booking, Hold, Notification, PartyRequest, Refund, Slot
 from app.pricing import ADDONS, PACKAGES
 from app.services.booking import WebhookResult
 from app.timeutil import format_clock, format_date, format_day, format_time
@@ -178,6 +178,21 @@ def owner_addons_text(booking: Booking, added: str) -> str:
     )
 
 
+def owner_refund_settled_text(booking: Booking, amount_cents: int, status: str) -> str:
+    """Square's own word on the refund, which is the one that counts. A failure needs the owner to act."""
+    if status == "completed":
+        return (
+            f"REFUND CONFIRMED: {dollars(amount_cents)} back to "
+            f"{full_name(booking.first_name, booking.last_name)} for the {when(booking.event_starts_at)} party. "
+            f"Nothing more to do."
+        )
+    return (
+        f"REFUND {status.upper()}: {dollars(amount_cents)} to "
+        f"{full_name(booking.first_name, booking.last_name)} ({booking.phone}) did not go through. "
+        f"Finish it in Square."
+    )
+
+
 def owner_late_payment_text(hold: Hold, starts_at: datetime) -> str:
     return (
         f"PAYMENT ON EXPIRED HOLD, call parent: {PACKAGES[hold.package].label} {when(starts_at)}, {hold.kids} kids. "
@@ -299,7 +314,7 @@ def _claim(
         # those arrive on a single request that has already decided it is allowed to happen.
         statement = statement.on_conflict_do_nothing(
             index_elements=["hold_id", "audience", "channel"],
-            index_where=text("event IN ('booked', 'late_payment')"),
+            index_where=text("event IN ('booked', 'late_payment', 'refunded')"),
         )
     claimed = db.execute(statement.returning(Notification.id)).scalar_one_or_none()
     db.commit()
@@ -363,6 +378,22 @@ def notify_after_commit(db: Session, settings: Settings, result: WebhookResult) 
             except Exception:
                 log.exception("Could not record notification failure")
                 db.rollback()
+
+
+def notify_refund_settled(db: Session, settings: Settings, booking_id: int) -> None:
+    """Best-effort, after the refund webhook has committed. Claimed once, because Square sends
+    refund.created and refund.updated for one refund and redelivers both."""
+    try:
+        booking = db.get(Booking, booking_id)
+        refund = db.scalar(select(Refund).where(Refund.booking_id == booking_id))
+        if booking is None or refund is None:
+            return
+        body = owner_refund_settled_text(booking, refund.amount_cents, refund.status)
+    except Exception:
+        log.exception("Could not build refund notification for booking %s", booking_id)
+        db.rollback()
+        return
+    notify_owner(db, settings, booking, body, event="refunded")
 
 
 def notify_owner(db: Session, settings: Settings, booking: Booking, body: str, event: str) -> None:
