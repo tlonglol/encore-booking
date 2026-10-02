@@ -2184,7 +2184,56 @@ body.scroll-locked { overflow: hidden; }
 }
 
 @media (max-width: 640px) {
-  /* Tucked: the header row and nothing else, so a focused field is never behind the sheet. The open state is
-     a separate class, so whatever the sheet was showing comes back when the keyboard goes. */
+  /* Two rows collapsed: the header line, then the button. Nothing else earns a row at this width. */
+  .rail-handle { padding: 0 1.25rem; min-height: 44px; gap: 10px; }
+  .rail-handle-label { flex: none; }
+  /* The running total lives in the header while the sheet is shut, so the sheet does not need a money row. */
+  .rail-handle-money {
+    margin-left: auto;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    font-family: var(--body);
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .handle-total { font-weight: 700; color: var(--white); }
+  .handle-today { color: var(--tier); font-weight: 600; }
+  .rail-handle-caret { flex: none; margin-left: 2px; }
+
+  .rail-foot { padding: 6px 1.25rem calc(6px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
+  #advance { min-height: 48px; padding-top: 0; padding-bottom: 0; }
+  /* The promise sits between the header and the button it qualifies, tight to both. */
+  .rail-policy { font-size: 12px; line-height: 1.3; margin: 0; }
+  /* The caption is a footnote to the button, not a line of its own. */
+  .rail-note { font-size: 11px; line-height: 1.25; margin-top: -2px; }
+  /* Expanding the sheet is the way to see the breakdown, so the button that said so is redundant here. The
+     "Due today" heading is redundant too: the header row above it already carries the same number. */
+  .rail-details, .rail-lead { display: none; }
+  /* Collapsed, the money is the header row's job, so this block gives up its height. It is flattened rather
+     than hidden because the delta chip lives inside it, and that chip is out of flow and still has to paint
+     above the sheet every time an add-on changes the total. */
+  .rail:not(.open) .rail-money { height: 0; min-height: 0; gap: 0; overflow: visible; }
+  .rail:not(.open) .rail-money > :not(.rail-total-line) { display: none; }
+  .rail:not(.open) .rail-total-line { height: 0; }
+  .rail:not(.open) .rail-total-line > :not(.rail-delta) { display: none; }
+
+  /* Everything above the open sheet closes it, the banner and the hold strip included: while the sheet is
+     expanded it is the only thing being used, so it sits above all the page chrome and the scrim just under it. */
+  .rail-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(5, 5, 5, 0.5); }
+  .rail-scrim[hidden] { display: none; }
+  body.sheet-open .rail { z-index: 103; }
+  /* A scroll behind an open sheet used to carry the header row, and the only way to shut it, off the screen.
+     Both elements: either one can be the scrolling box depending on the browser. */
+  html.sheet-open, body.sheet-open { overflow: hidden; touch-action: none; overscroll-behavior: none; }
+
+  /* Tucked: the header row and nothing else, so a focused field is never behind the sheet. The row is lifted
+     onto the floor of the visual viewport by script; no transition, so it never animates or lags the keyboard. */
   .rail.tucked .rail-body, .rail.tucked .rail-foot { display: none; }
+  .rail, .rail.tucked { transition: none; }
 }

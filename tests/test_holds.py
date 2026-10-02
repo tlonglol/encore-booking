@@ -220,3 +220,66 @@ def test_swapping_dates_frees_the_one_left_behind(db: Session) -> None:
     assert start_hold(funnel, second_slot.id, replace_hold_id=first).status_code == 201
     assert _grid_status(saturday) == "open"
     assert _grid_status(sunday) == "held"
+
+
+def test_releasing_a_held_date_frees_it_on_the_grid(db: Session) -> None:
+    """The parent taps their own held date to let it go: the next parent sees it open again."""
+    day = next_saturday(7)
+    slot = make_slot(db, day)
+    funnel = client_from("192.0.2.21")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    assert _grid_status(day) == "held"
+    response = funnel.post(f"/api/holds/{hold_id}/release")
+    assert response.status_code == 200
+    assert response.json() == {"released": True}
+    assert _grid_status(day) == "open"
+    assert db.get(Hold, uuid.UUID(hold_id)).status == "cancelled"
+
+
+def test_releasing_twice_is_idempotent(db: Session) -> None:
+    """A double tap, or a retry on a flaky connection, is the same request twice and answers the same way."""
+    slot = make_slot(db, next_saturday(7))
+    funnel = client_from("192.0.2.22")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    assert funnel.post(f"/api/holds/{hold_id}/release").json() == {"released": True}
+    second = funnel.post(f"/api/holds/{hold_id}/release")
+    assert second.status_code == 200
+    assert second.json() == {"released": False}
+
+
+def test_release_from_another_browser_leaves_the_hold_live(db: Session) -> None:
+    """A hold id is not a credential. Someone else holding it cannot hand the date back on the owner's behalf."""
+    day = next_saturday(7)
+    slot = make_slot(db, day)
+    owner = client_from("192.0.2.23")
+    hold_id = start_hold(owner, slot.id).json()["hold_id"]
+    stranger = client_from("192.0.2.24")
+    response = stranger.post(f"/api/holds/{hold_id}/release")
+    assert response.status_code == 200
+    assert response.json() == {"released": False}
+    assert _grid_status(day) == "held"
+    assert db.get(Hold, uuid.UUID(hold_id)).status == "pending_payment"
+
+
+def test_release_never_touches_a_booked_hold(db: Session) -> None:
+    """The date is paid for. Releasing it would free a slot someone owns and strand their booking."""
+    day = next_saturday(7)
+    slot = make_slot(db, day)
+    funnel = client_from("192.0.2.25")
+    hold_id = start_hold(funnel, slot.id).json()["hold_id"]
+    checkout(funnel, hold_id)
+    hold = db.get(Hold, uuid.UUID(hold_id))
+    make_booking(db, hold, slot)
+    response = funnel.post(f"/api/holds/{hold_id}/release")
+    assert response.status_code == 200
+    assert response.json() == {"released": False}
+    db.refresh(hold)
+    assert hold.status != "cancelled"
+    assert _grid_status(day) == "booked"
+
+
+def test_release_of_an_unknown_hold_is_not_an_error(db: Session) -> None:
+    """Nothing is revealed about whether a hold id exists."""
+    response = client().post(f"/api/holds/{uuid.uuid4()}/release")
+    assert response.status_code == 200
+    assert response.json() == {"released": False}

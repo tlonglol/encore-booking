@@ -455,6 +455,22 @@
           onclick: () => openCompare("summary"),
         });
     box.replaceChildren(...[...lines, details].filter(Boolean));
+    renderHandleMoney();
+  }
+
+  // The collapsed sheet's one line of money, in the header row itself: the total, then what is due today.
+  // It is the phone's whole summary while the sheet is shut, which is why the sheet can afford to be two rows.
+  function renderHandleMoney() {
+    const box = $("rail-handle-money");
+    if (!box) return;
+    if (!draft.package || !ui.quote) {
+      box.replaceChildren();
+      return;
+    }
+    box.replaceChildren(
+      el("span", { class: "handle-total", text: money(ui.quote.total_cents) }),
+      el("span", { class: "handle-today", text: ` · ${money(ui.quote.deposit_cents)} today` })
+    );
   }
 
   function renderAdvance() {
@@ -754,7 +770,8 @@
         type: "button",
         class: `wk-card ${picked || mine ? "open yours" : day.status}`,
         disabled: !tappable && !waitable,
-        "aria-pressed": String(picked),
+        // The held date is a pressed toggle too: pressing it again is what hands it back.
+        "aria-pressed": String(picked || mine),
         "aria-label": waitable
           ? `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}. Get notified if it opens up.`
           : `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
@@ -1151,12 +1168,43 @@
     return wrap;
   }
 
-  // Tapping a date only selects it. Nothing is held and the page stays put until Confirm.
+  // Tapping a date only selects it. Nothing is held and the page stays put until Confirm. Tapping the one
+  // already chosen takes it back: a selection clears on the spot, and a date this browser is actually holding
+  // is handed back to the server first, so it reopens for everyone else instead of sitting dead for 15 minutes.
   function selectDate(day) {
     notice(null);
+    if (holding() && day.slot_id === draft.slotId) return releaseDate();
+    if (ui.picked && ui.picked.slot_id === day.slot_id) {
+      ui.picked = null;
+      renderGrid();
+      renderAdvance();
+      return;
+    }
     ui.picked = day;
     renderGrid();
     renderAdvance();
+  }
+
+  async function releaseDate() {
+    if (ui.busy) return;
+    ui.busy = true;
+    renderAdvance();
+    const holdId = draft.holdId;
+    const { status } = await api(`/api/holds/${holdId}/release`, { method: "POST" });
+    ui.busy = false;
+    if (status !== 200) {
+      // The server may still be holding the date. Saying otherwise here would show an open date that is not.
+      renderAdvance();
+      notice("Couldn't let that date go. Try again.", [], true);
+      return;
+    }
+    ui.picked = null;
+    clearDraft();
+    renderRail();
+    renderMoney();
+    renderAdvance();
+    renderHoldHead();
+    await loadGrid();
   }
 
   async function confirmDate() {
@@ -1536,21 +1584,49 @@
     mountCard();
   }
 
-  // ---------- the summary sheet and the on-screen keyboard ----------
-  // On Info + Deposit the sheet is at its tallest: the lead amount, the policy line, the pay button and its
-  // caption. iOS opens the keyboard by shrinking the visual viewport without moving a fixed element, so the
-  // sheet stayed pinned over what was left and covered the very field being typed into. While a field on this
-  // step has focus the sheet tucks down to its header row; blur, or the keyboard going away, brings it back.
+  // ---------- the summary sheet, the scrim and the on-screen keyboard ----------
+  // Collapsed, the sheet is two rows: the header line (label, running total, chevron) and the button. Expanded,
+  // it adds the steps list and the receipt and is capped at 70% of the screen.
   //
-  // Nothing here trusts where the browser has actually painted a fixed element mid-animation: the sheet is
-  // made small enough that it cannot cover a field, and the visual viewport is only ever read to decide
-  // whether the keyboard is still up.
+  // The keyboard is the hard part. iOS opens it by shrinking the visual viewport while leaving the layout
+  // viewport alone, so a `position: fixed; bottom: 0` sheet stays pinned below the keyboard, over the field
+  // being typed into. While the keyboard is up the sheet drops to its header row and is translated up by
+  // exactly the slice the keyboard took, read from visualViewport. No transition touches that transform: the
+  // sheet is simply where it belongs on every frame, and the button row appears and disappears without motion.
   const UNTUCK_MS = 120;
   let untuckTimer = null;
 
+  // The sheet cannot be expanded and tucked at once: a keyboard means the parent is typing, not reading.
+  function openSheet(open) {
+    const rail = $("rail");
+    if (open && rail.classList.contains("tucked")) return;
+    rail.classList.toggle("open", open);
+    $("rail-handle").setAttribute("aria-expanded", String(open));
+    $("rail-scrim").hidden = !open;
+    // The page behind an open sheet is a dismiss target, not something to scroll: that is what let a scroll
+    // carry the header row, and with it the only way to shut the sheet, off the screen. Both elements, because
+    // which one is the scrolling box depends on the browser.
+    document.body.classList.toggle("sheet-open", open);
+    document.documentElement.classList.toggle("sheet-open", open);
+  }
+
   function tuckSheet(on) {
     clearTimeout(untuckTimer);
-    $("rail").classList.toggle("tucked", on);
+    const rail = $("rail");
+    if (on) openSheet(false);
+    rail.classList.toggle("tucked", on);
+    liftSheet();
+  }
+
+  // Sit on the floor of the visual viewport rather than the layout viewport. Zero while no keyboard is up,
+  // so this is a no-op everywhere but a phone mid-typing.
+  function liftSheet() {
+    const rail = $("rail");
+    const view = window.visualViewport;
+    const lift = view && rail.classList.contains("tucked")
+      ? Math.max(0, Math.round(window.innerHeight - view.height - view.offsetTop))
+      : 0;
+    rail.style.transform = lift ? `translateY(-${lift}px)` : "";
   }
 
   // Moving between two fields fires focusout then focusin, so the sheet waits a beat before coming back
@@ -1571,19 +1647,33 @@
     return Boolean(view) && window.innerHeight - view.height > 120;
   }
 
-  // The card lives in Square's iframe, so its focus arrives as an event rather than as focusin, and it is the
-  // one field far enough down the page to need centring once the keyboard and the sheet have settled.
-  function centerCardBlock() {
+  // A control the keyboard would otherwise cover: bring it to the middle of what is left. The wait is for the
+  // keyboard's own animation, which is what decides how much of the screen there is to centre within.
+  function centerOnFocus(node) {
+    if (!node) return;
     setTimeout(() => {
-      const block = $("card-block");
-      if (block) block.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
+      node.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
     }, 300);
+  }
+
+  // The birthday boxes and the headcount stepper sit low on their steps, and a tap on one is the parent
+  // asking to type into it: it is brought up before the first keystroke rather than after.
+  function centerIfLowControl(target) {
+    const low = target.closest && target.closest(".bday-card, .headcount");
+    if (low) return centerOnFocus(low);
+    // Anything else: only when the keyboard would actually be covering it, so nothing moves on a desktop.
+    const view = window.visualViewport;
+    if (!view || !keyboardUp()) return;
+    const rect = target.getBoundingClientRect();
+    if (rect.bottom > view.offsetTop + view.height - 24) centerOnFocus(target);
   }
 
   function watchKeyboard() {
     const main = document.querySelector(".funnel-main");
     main.addEventListener("focusin", (event) => {
-      if (onPaymentStep() && typeable(event.target)) tuckSheet(true);
+      if (!typeable(event.target)) return;
+      if (onPaymentStep()) tuckSheet(true);
+      centerIfLowControl(event.target);
     });
     main.addEventListener("focusout", (event) => {
       if (typeable(event.target)) scheduleUntuck();
@@ -1592,16 +1682,21 @@
       () => {
         if (!onPaymentStep()) return;
         tuckSheet(true);
-        centerCardBlock();
+        centerOnFocus($("card-block"));
       },
       () => scheduleUntuck()
     );
     if (window.visualViewport) {
       // The keyboard going away is the one signal that outranks focus: iOS can dismiss it while leaving the
       // field focused, and a sheet left tucked with no keyboard up is a sheet the parent cannot use.
-      window.visualViewport.addEventListener("resize", () => {
-        if (!keyboardUp()) tuckSheet(false);
-      });
+      const follow = () => {
+        if (!keyboardUp()) return tuckSheet(false);
+        liftSheet();
+      };
+      window.visualViewport.addEventListener("resize", follow);
+      // The viewport slides under a fixed element while the keyboard animates and while the page is scrolled
+      // with it open; following both keeps the sheet on the floor of what the parent can actually see.
+      window.visualViewport.addEventListener("scroll", liftSheet);
     }
   }
 
@@ -2130,11 +2225,9 @@
     if (!live && (await adoptBrowserHold())) staleStatus = null;
     if (draft.package) requote();
 
-    $("rail-handle").addEventListener("click", () => {
-      const rail = $("rail");
-      const open = rail.classList.toggle("open");
-      $("rail-handle").setAttribute("aria-expanded", String(open));
-    });
+    $("rail-handle").addEventListener("click", () => openSheet(!$("rail").classList.contains("open")));
+    // Tapping the page above the sheet is the other way to shut it, and the reason the scrim exists.
+    $("rail-scrim").addEventListener("click", () => openSheet(false));
     watchKeyboard();
     $("compare-close").addEventListener("click", () => $("compare").close());
     $("compare").addEventListener("click", (event) => { if (event.target === $("compare")) $("compare").close(); });

@@ -23,9 +23,14 @@
       <div id="step"></div>
     </div>
 
+    <!-- Everything above the expanded sheet is a way out of it, and nothing behind it is meant to be tapped
+         while it is open. Only ever visible on a phone. -->
+    <div class="rail-scrim" id="rail-scrim" hidden></div>
+
     <aside class="rail" id="rail" aria-label="Party summary">
       <button class="rail-handle" id="rail-handle" type="button" aria-expanded="false" aria-controls="rail-body">
-        <span>Party summary</span>
+        <span class="rail-handle-label">Party summary</span>
+        <span class="rail-handle-money" id="rail-handle-money"></span>
         <span class="rail-handle-caret" aria-hidden="true">▲</span>
       </button>
       <div class="rail-body" id="rail-body">

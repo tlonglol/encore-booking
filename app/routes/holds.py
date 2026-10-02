@@ -45,6 +45,7 @@ from app.services.holds import (
     hold_state,
     normalize_ip,
     recent_unpaid_holds,
+    release_hold,
     save_email,
 )
 from app.services.turnstile import verify as turnstile_verify
@@ -143,6 +144,17 @@ def post_hold(body: HoldRequest, request: Request, db: Session = Depends(get_db)
         day_label=format_day(slot.starts_at),
         time_label=format_time(slot.starts_at),
     )
+
+
+@router.post("/api/holds/{hold_id}/release")
+def post_release(hold_id: str, request: Request, db: Session = Depends(get_db)) -> dict[str, bool]:
+    """The parent tapping their own held date to let it go. Same cancellation the date swap runs.
+
+    Always 200: "that hold is not yours", "it already expired" and "you already released it" are all the same
+    thing to this caller, which only wants the date to stop being held by it, and answering them apart would
+    tell a stranger whether a hold id is live.
+    """
+    return {"released": release_hold(db, _parse_hold_id(hold_id), getattr(request.state, "session_id", None))}
 
 
 @router.patch("/api/holds/{hold_id}/email")

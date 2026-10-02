@@ -179,6 +179,42 @@ def _enforce_date_cooldown(db: Session, session_id: str | None, slot_id: int, mi
         raise DateCoolingDown(until)
 
 
+# The one way a live hold is given up: pending_payment to cancelled, and nothing else. Swapping dates, and
+# tapping the held date to let it go, are the same event as far as the slot is concerned, so they run the same
+# statement rather than two that could drift apart. A hold that is already cancelled, expired or booked does
+# not match, which is what makes every caller idempotent for free.
+_CANCEL_BY_ID = text(
+    "UPDATE holds SET status = 'cancelled', updated_at = now()"
+    " WHERE id = :id AND status = 'pending_payment'"
+)
+_CANCEL_BY_SESSION = text(
+    "UPDATE holds SET status = 'cancelled', updated_at = now()"
+    " WHERE session_id = :session_id AND status = 'pending_payment'"
+)
+
+
+def release_hold(db: Session, hold_id: uuid.UUID, session_id: str | None) -> bool:
+    """Give a held date back, at the request of the browser holding it. True if this call is what released it.
+
+    Scoped to the session that owns the hold: a hold id travels in a URL the parent can paste anywhere, and on
+    its own it must not be enough to cancel a date someone else is paying for. A hold already gone, already
+    booked, or belonging to another browser is left exactly as it is and reported as "nothing released", which
+    is the same answer the caller gets for releasing twice.
+    """
+    if session_id is None:
+        return False
+    result = db.execute(
+        text(
+            "UPDATE holds SET status = 'cancelled', updated_at = now()"
+            " WHERE id = :id AND session_id = :session_id AND status = 'pending_payment'"
+            " AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = holds.id)"
+        ),
+        {"id": hold_id, "session_id": session_id},
+    )
+    db.commit()
+    return bool(result.rowcount)
+
+
 def create_hold(
     db: Session,
     slot_id: int,
@@ -220,21 +256,9 @@ def create_hold(
     # One browser, one date. The client's replace_hold_id is still honoured, but the session is what makes
     # this a guarantee: a second tab, or a tab that lost its pointer, swaps rather than stacking.
     if session_id is not None:
-        db.execute(
-            text(
-                "UPDATE holds SET status = 'cancelled', updated_at = now()"
-                " WHERE session_id = :session_id AND status = 'pending_payment'"
-            ),
-            {"session_id": session_id},
-        )
+        db.execute(_CANCEL_BY_SESSION, {"session_id": session_id})
     if replace_hold_id is not None:
-        db.execute(
-            text(
-                "UPDATE holds SET status = 'cancelled', updated_at = now()"
-                " WHERE id = :id AND status = 'pending_payment'"
-            ),
-            {"id": replace_hold_id},
-        )
+        db.execute(_CANCEL_BY_ID, {"id": replace_hold_id})
     try:
         _enforce_date_cooldown(db, session_id, slot_id, cooldown_minutes)
         _enforce_creation_rate(db, client_ip, rate_per_hour)
