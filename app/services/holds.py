@@ -287,6 +287,7 @@ class HoldState:
     local_date: date
     seconds_remaining: int
     confirmation_code: str | None
+    manage_token: str | None
 
 
 def hold_state(db: Session, hold_id: str) -> HoldState | None:
@@ -296,6 +297,7 @@ def hold_state(db: Session, hold_id: str) -> HoldState | None:
             Slot.starts_at,
             Slot.local_date,
             Booking.confirmation_code,
+            Booking.manage_token,
             func.greatest(0, func.extract("epoch", Hold.expires_at - func.now())).label("remaining"),
         )
         .join(Slot, Slot.id == Hold.slot_id)
@@ -304,11 +306,11 @@ def hold_state(db: Session, hold_id: str) -> HoldState | None:
     ).one_or_none()
     if row is None:
         return None
-    hold, starts_at, local_date, code, remaining = row
+    hold, starts_at, local_date, code, manage_token, remaining = row
     status = hold.status
     if status == "pending_payment" and remaining <= 0:
         status = "expired"
-    return HoldState(hold, status, starts_at, local_date, int(remaining), code)
+    return HoldState(hold, status, starts_at, local_date, int(remaining), code, manage_token)
 
 
 def attach_payment_link(db: Session, hold: Hold, link_id: str, url: str, order_id: str) -> None:

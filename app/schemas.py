@@ -84,6 +84,8 @@ class PartyDetails(BaseModel):
     """Everything the confirmation page may show. Deliberately no phone, email, or notes."""
 
     confirmation_code: str | None
+    # The manage page's credential, present only on a booked party; never on a pending hold.
+    manage_token: str | None = None
     first_name: str | None
     # The birthday child, shown only once booked (never on a pending hold).
     kid_name: str | None = None
@@ -127,6 +129,16 @@ class CheckoutOut(BaseModel):
 class BookingOut(BaseModel):
     status: str
     party: PartyDetails
+
+
+class ManageOut(BaseModel):
+    """The manage page's whole state. Eligibility is computed server-side and sent; the page never decides it."""
+
+    status: str
+    party: PartyDetails
+    free_until: date
+    free_until_label: str
+    inside_free_window: bool
 
 
 class RequestCreate(BaseModel):

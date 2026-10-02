@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.main import app
 from app.models import Booking, Hold, Slot
 from app.pricing import quote
-from app.services.booking import new_confirmation_code
+from app.services.booking import new_confirmation_code, new_manage_token
 from app.timeutil import slot_start_utc, venue_today
 
 ADMIN_PASSWORD = "test-admin-password"
@@ -79,6 +79,7 @@ def make_booking(db: Session, hold: Hold, slot: Slot) -> Booking:
         hold_id=hold.id,
         slot_id=slot.id,
         confirmation_code=new_confirmation_code(),
+        manage_token=new_manage_token(),
         package=hold.package,
         kids=hold.kids,
         addons=hold.addons,

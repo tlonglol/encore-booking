@@ -81,7 +81,7 @@ def parent_booked_email_subject(booking: Booking) -> str:
     return f"You're booked: {PACKAGES[booking.package].label} party {format_day(booking.event_starts_at)}"
 
 
-def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
+def parent_booked_email(booking: Booking, confirmation_url: str, manage_url: str) -> str:
     package = PACKAGES[booking.package]
     return "\n".join(
         [
@@ -102,6 +102,8 @@ def parent_booked_email(booking: Booking, confirmation_url: str) -> str:
             f"  Due at the party: {dollars(booking.total_cents - booking.deposit_cents)}",
             "",
             "Where: Encore Esports, 538 Main St, 2nd floor, entrance on Division St.",
+            "",
+            f"Add extras, move your date or cancel: {manage_url}",
             "",
             REFUND_PROMISE,
             "",
@@ -166,9 +168,14 @@ def messages_for(db: Session, settings: Settings, hold_id: uuid.UUID) -> tuple[i
     booking = db.scalar(select(Booking).where(Booking.hold_id == hold_id, Booking.cancelled_at.is_(None)))
     if booking is not None:
         link = f"{settings.frontend_origin}/confirm.html?code={booking.confirmation_code}"
+        manage_link = f"{settings.frontend_origin}/manage.html?t={booking.manage_token}"
         parent_sms = Message("parent", "sms", booking.phone, parent_booked_sms(booking, link))
         parent_email = Message(
-            "parent", "email", booking.email, parent_booked_email(booking, link), parent_booked_email_subject(booking)
+            "parent",
+            "email",
+            booking.email,
+            parent_booked_email(booking, link, manage_link),
+            parent_booked_email_subject(booking),
         )
         return booking.id, [parent_sms, parent_email, *_owner_messages(settings, owner_booked_text(booking))]
     hold = db.get(Hold, hold_id)

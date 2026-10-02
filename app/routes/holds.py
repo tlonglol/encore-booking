@@ -188,13 +188,19 @@ def post_checkout(hold_id: str, body: CheckoutIn, db: Session = Depends(get_db))
 
 
 def party_details(
-    record: Any, starts_at: datetime, confirmation_code: str | None, first_name: str | None
+    record: Any,
+    starts_at: datetime,
+    confirmation_code: str | None,
+    first_name: str | None,
+    manage_token: str | None = None,
 ) -> PartyDetails:
-    """record is a Hold or a Booking; both carry the same snapshot fields."""
+    """record is a Hold or a Booking; both carry the same snapshot fields. The manage token lives on the
+    booking, so a hold view that has one passes it in rather than reading it off the record."""
     package = PACKAGES[record.package]
     booked = confirmation_code is not None
     return PartyDetails(
         confirmation_code=confirmation_code,
+        manage_token=manage_token if booked else None,
         first_name=first_name,
         kid_name=record.kid_name if booked else None,
         kid_age=record.kid_age if booked else None,
@@ -238,5 +244,6 @@ def get_hold(hold_id: str, db: Session = Depends(get_db)) -> HoldStatusOut:
             state.starts_at,
             state.confirmation_code if booked else None,
             hold.first_name if booked else None,
+            state.manage_token if booked else None,
         ),
     )

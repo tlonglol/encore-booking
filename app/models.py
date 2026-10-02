@@ -127,6 +127,9 @@ class Booking(Base):
     hold_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("holds.id"), unique=True)
     slot_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("slots.id"))
     confirmation_code: Mapped[str] = mapped_column(Text, unique=True)
+    # The no-login manage page's only credential. Longer than the confirmation code, never shown in admin,
+    # never logged, and never written into the calendar file the way the confirmation code is.
+    manage_token: Mapped[str] = mapped_column(Text, unique=True)
     package: Mapped[str] = mapped_column(Text)
     kids: Mapped[int] = mapped_column(SmallInteger)
     addons: Mapped[dict[str, Any]] = mapped_column(JSONB)

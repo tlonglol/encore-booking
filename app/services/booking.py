@@ -15,6 +15,8 @@ from app.services.square import signature_valid
 
 CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 CODE_LENGTH = 10
+# 24 bytes: long enough that the manage page needs no login, short enough to sit in an SMS.
+MANAGE_TOKEN_BYTES = 24
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +42,10 @@ class WebhookResult:
 
 def new_confirmation_code() -> str:
     return "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+
+
+def new_manage_token() -> str:
+    return secrets.token_urlsafe(MANAGE_TOKEN_BYTES)
 
 
 def parse_payment_event(event: Any) -> PaymentEvent | None:
@@ -98,6 +104,7 @@ def _book(db: Session, hold: Hold, event: PaymentEvent) -> Booking:
         hold_id=hold.id,
         slot_id=hold.slot_id,
         confirmation_code=new_confirmation_code(),
+        manage_token=new_manage_token(),
         package=hold.package,
         kids=hold.kids,
         addons=hold.addons,

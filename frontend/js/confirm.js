@@ -1,5 +1,5 @@
 (function () {
-  const { api, detailText, money, el, store } = window.Encore;
+  const { api, detailText, money, el, store, keep } = window.Encore;
   window.EncoreShell.mountNav({ ctaHref: "index.html#book" });
   window.EncoreShell.mountFooter();
   const view = document.getElementById("view");
@@ -96,8 +96,22 @@
     return el("p", { class: "fine" }, ["538 Main St, 2nd floor, entrance on Division St · New Rochelle, NY · ", el("a", { href: "tel:+16462038087", text: "(646) 203-8087" })]);
   }
 
+  function manageLinks(party) {
+    if (!party.manage_token) return [];
+    const href = `manage.html?t=${encodeURIComponent(party.manage_token)}`;
+    return [
+      el("p", { class: "fine" }, [
+        "You can add Pizza Packs, Drinks, or VR anytime before the party: ",
+        el("a", { href: href, text: "manage this booking" }),
+        ". The same page cancels or moves your date.",
+      ]),
+    ];
+  }
+
   function showBooked(party) {
     store("encore.draft", null);
+    // The hold became a booking, so the browser-wide pointer every tab watches is finished with.
+    keep("encore.hold", null);
     view.replaceChildren(
       el("p", { class: "hold-caption", text: party.first_name ? `You're all set, ${party.first_name}` : "You're all set" }),
       title("You're", "booked!"),
@@ -107,11 +121,7 @@
       details(party),
       calendarButtons(party),
       el("p", { class: "fine", text: "What happens next: Encore will text you the week of your party." }),
-      el("p", { class: "fine" }, [
-        "You can add Pizza Packs, Drinks, or VR anytime before the party — text ",
-        el("a", { href: "sms:+16462038087", text: "(646) 203-8087" }),
-        ".",
-      ]),
+      ...manageLinks(party),
       where()
     );
     renderBar(party);

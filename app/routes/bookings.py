@@ -74,5 +74,7 @@ def get_booking(code: str, db: Session = Depends(get_db)) -> BookingOut:
         raise HTTPException(status_code=404, detail="Booking not found")
     return BookingOut(
         status="cancelled" if booking.cancelled_at else "booked",
-        party=party_details(booking, booking.event_starts_at, booking.confirmation_code, booking.first_name),
+        party=party_details(
+            booking, booking.event_starts_at, booking.confirmation_code, booking.first_name, booking.manage_token
+        ),
     )
