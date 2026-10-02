@@ -231,6 +231,7 @@
     draft.step = step;
     ui.popover = null;
     ui.policyOpen = false;
+    ui.notesOpen = false;
     save();
     if (step === "date") startGridPoll();
     else stopGridPoll();
@@ -1472,6 +1473,7 @@
         field("phone", "Phone", { type: "tel", inputmode: "tel", autocomplete: "tel", placeholder: "(646) 000-0000", value: saved.phone }),
         field("kid_name", "Kid's name", { placeholder: "The birthday kid", value: saved.kidName }),
         field("kid_age", "Kid's age", { inputmode: "numeric", pattern: "[0-9]*", maxlength: "2", placeholder: "e.g. 9", value: saved.kidAge }),
+        notesField(saved.notes),
       ]),
       el("div", { class: "card-block", id: "card-block" }, [
         el("div", { class: "card-label", text: "Card" }),
@@ -1484,6 +1486,7 @@
     ["email", "parent_name", "phone", "kid_name", "kid_age"].forEach((id) => {
       $(id).addEventListener("blur", id === "email" ? saveEmailOnBlur : rememberForm);
     });
+    if ($("notes")) $("notes").addEventListener("blur", rememberForm);
     renderSummary();
     mountCard();
   }
@@ -1512,6 +1515,41 @@
         note.classList.add("card-note-error");
       }
     }
+  }
+
+  // Collapsed by default behind a link; stays open once opened (ui.notesOpen), or from the first render
+  // if the draft already carries notes, so a parent who typed something and came back does not lose it
+  // behind a click.
+  function notesField(saved) {
+    const open = ui.notesOpen || Boolean(saved);
+    if (!open) {
+      return el("div", { class: "field full" }, [
+        el("button", {
+          type: "button",
+          class: "link-btn",
+          id: "notes-toggle",
+          onclick: () => {
+            ui.notesOpen = true;
+            renderInfo();
+          },
+          text: "+ Anything we should know? (optional)",
+        }),
+      ]);
+    }
+    return el("div", { class: "field full" }, [
+      el("label", { for: "notes", text: "Anything we should know? (optional)" }),
+      el(
+        "textarea",
+        {
+          id: "notes",
+          name: "notes",
+          rows: "3",
+          maxlength: "500",
+          placeholder: "Theme, favorite game, anything the host should know",
+        },
+        [saved || ""]
+      ),
+    ]);
   }
 
   function field(id, label, options) {
@@ -1553,6 +1591,8 @@
       phone: value("phone"),
       kidName: value("kid_name"),
       kidAge: value("kid_age"),
+      // "" when the field is collapsed (not in the DOM) or simply empty; both mean no notes.
+      notes: value("notes"),
     };
   }
 
@@ -1620,6 +1660,7 @@
       kid_name: form.kidName,
       kid_age: Number(form.kidAge),
       birthday: draft.birthday || null,
+      notes: form.notes || null,
     };
     const snapshot = await api(`/api/holds/${draft.holdId}/checkout`, { method: "POST", body: body });
     if (snapshot.status !== 200) {

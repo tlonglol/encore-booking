@@ -188,6 +188,7 @@ def post_checkout(hold_id: str, body: CheckoutIn, db: Session = Depends(get_db))
         kid_name=body.kid_name,
         kid_age=body.kid_age,
         birthday=body.birthday,
+        notes=body.notes,
     )
     try:
         hold = checkout_hold(db, parsed, data, venue_today(datetime.now(UTC)))
@@ -322,6 +323,7 @@ def party_details(
         kid_name=record.kid_name if booked else None,
         kid_age=record.kid_age if booked else None,
         birthday=record.birthday if booked else None,
+        notes=record.notes if booked else None,
         package=record.package,
         package_label=package.label,
         day_label=format_day(starts_at),

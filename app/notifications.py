@@ -116,10 +116,13 @@ def parent_booked_email(booking: Booking, confirmation_url: str, manage_url: str
 
 
 def owner_booked_text(booking: Booking) -> str:
-    return (
+    body = (
         f"NEW PARTY: {PACKAGES[booking.package].label} {when(booking.event_starts_at)}, {booking.kids} kids, "
         f"{addons_summary(booking.addons)}. Deposit paid. {full_name(booking.first_name, booking.last_name)} {booking.phone}."
     )
+    if booking.notes:
+        body += f" Notes: {booking.notes}"
+    return body
 
 
 def owner_request_text(request: PartyRequest) -> str:

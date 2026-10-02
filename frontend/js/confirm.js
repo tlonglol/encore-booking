@@ -22,6 +22,13 @@
     return [["Birthday", `${turns} · ${day}`]];
   }
 
+  // Shown only once booked, same gating as the birthday row: before that, notes are the parent's own
+  // unsent words and nothing elsewhere on the hold view shows them either.
+  function notesRow(party) {
+    if (!party.notes) return [];
+    return [["Notes", party.notes]];
+  }
+
   function details(party) {
     const rows = [
       ["Package", party.package_label],
@@ -29,6 +36,7 @@
       ["Time", `${party.time_label} · ${party.hours} hours`],
       ["Kids", String(party.kids)],
       ...birthdayRow(party),
+      ...notesRow(party),
       ...party.line_items
         .filter((item) => item.key !== "package" && item.key !== "additional_kids")
         .map((item) => [item.quantity > 1 ? `${item.label} × ${item.quantity}` : item.label, item.included ? "Included" : money(item.amount_cents)]),

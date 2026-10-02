@@ -31,12 +31,17 @@
     return el("div", { class: "section-label" }, [el("span", { text: text }), el("i")]);
   }
 
+  function summaryNotesRow(party) {
+    return party.notes ? [["Notes", party.notes]] : [];
+  }
+
   function details(party) {
     const rows = [
       ["Package", party.package_label],
       ["Date", party.day_label],
       ["Time", `${party.time_label} · ${party.hours} hours`],
       ["Kids", String(party.kids)],
+      ...summaryNotesRow(party),
       ...party.line_items
         .filter((item) => item.key !== "package" && item.key !== "additional_kids")
         .map((item) => [
@@ -127,15 +132,37 @@
       el("h3", { text: "Add extras" }),
       el("div", { class: "manage-rows" }, rows),
       kidsRow(data),
+      notesRow(),
       el("div", { class: "manage-actions" }, [
-        el("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => submitAddons(data), text: "Add to my party" }),
+        el("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => submitAddons(data), text: "Save changes" }),
         el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => cancelAdding(data), text: "Never mind" }),
       ]),
     ]);
   }
 
+  // Edited under the same panel, the same cutoff, as the add-ons: posting it is its own reason to submit,
+  // not an afterthought tacked onto an addon change.
+  function notesRow() {
+    return el("div", { class: "field" }, [
+      el("label", { for: "manage-notes", text: "Anything we should know? (optional)" }),
+      el(
+        "textarea",
+        {
+          id: "manage-notes",
+          rows: "3",
+          maxlength: "500",
+          placeholder: "Theme, favorite game, anything the host should know",
+          oninput: (event) => {
+            ui.adding.notes = event.target.value;
+          },
+        },
+        [ui.adding.notes || ""]
+      ),
+    ]);
+  }
+
   function start(data) {
-    ui.adding = { addons: {}, kids: data.party.kids };
+    ui.adding = { addons: {}, kids: data.party.kids, notes: data.party.notes || "" };
     render(data);
   }
 
@@ -204,11 +231,11 @@
       const owned = have[key] === "included" ? 0 : have[key] || 0;
       wanted[key] = owned + extra;
     });
-    const result = await send("/addons", { addons: wanted, kids: ui.adding.kids });
+    const result = await send("/addons", { addons: wanted, kids: ui.adding.kids, notes: ui.adding.notes });
     if (!result) return;
     if (result.status !== 200) return error(detailText(result.data));
     ui.adding = null;
-    render(result.data, "Added. Your balance due at the party has been updated.");
+    render(result.data, "Saved. Your balance due at the party has been updated.");
   }
 
   // ---------- reschedule ----------

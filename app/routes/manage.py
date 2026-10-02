@@ -186,14 +186,16 @@ def post_reschedule(token: str, body: RescheduleIn, db: Session = Depends(get_db
 @router.post("/{token}/addons")
 def post_addons(token: str, body: AddonsIn, db: Session = Depends(get_db)) -> Any:
     """Additions only, re-priced by the same function the funnel uses. The deposit never changes: the whole
-    increase lands in what is due at the party."""
+    increase lands in what is due at the party. Notes ride along under the same cutoff; a notes-only edit
+    is a real change here, not an addition, so it is allowed through on its own."""
     settings = get_settings()
     booking = _require_live_booking(db, token)
     before = dict(booking.addons)
     before_kids = booking.kids
+    before_notes = booking.notes
     now = datetime.now(UTC)
     try:
-        add_to_booking(db, booking.id, body.addons, body.kids, settings.addon_cutoff_hours, now)
+        add_to_booking(db, booking.id, body.addons, body.kids, settings.addon_cutoff_hours, now, body.notes)
     except BookingGone:
         raise HTTPException(status_code=409, detail="This booking was already cancelled.") from None
     except NotEligible as error:
@@ -202,13 +204,17 @@ def post_addons(token: str, body: AddonsIn, db: Session = Depends(get_db)) -> An
         raise HTTPException(status_code=422, detail=str(error)) from error
     db.refresh(booking)
     notify_owner(
-        db, settings, booking, owner_addons_text(booking, _what_changed(before, before_kids, booking)), event="addons_changed"
+        db,
+        settings,
+        booking,
+        owner_addons_text(booking, _what_changed(before, before_kids, booking.notes != before_notes, booking)),
+        event="addons_changed",
     )
     return _view(booking)
 
 
-def _what_changed(before: dict[str, int], before_kids: int, booking: Booking) -> str:
-    """What the owner actually has to buy: the difference, not the whole order."""
+def _what_changed(before: dict[str, int], before_kids: int, notes_changed: bool, booking: Booking) -> str:
+    """What the owner actually has to buy, plus whether the notes moved: the difference, not the whole order."""
     added = {
         key: quantity - before.get(key, 0)
         for key, quantity in booking.addons.items()
@@ -217,4 +223,6 @@ def _what_changed(before: dict[str, int], before_kids: int, booking: Booking) ->
     parts = [addons_summary(added)] if added else []
     if booking.kids > before_kids:
         parts.append(f"{booking.kids - before_kids} more kids (now {booking.kids})")
+    if notes_changed:
+        parts.append("notes updated")
     return ", ".join(parts) or "nothing"

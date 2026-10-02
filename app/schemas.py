@@ -73,6 +73,8 @@ class CheckoutIn(BaseModel):
     kid_name: str = Field(min_length=1, max_length=60)
     kid_age: int = Field(ge=1, le=99)
     birthday: date | None = None
+    # Free text for the host, never required. Trimmed and emptied-to-None server-side.
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class SlotSummary(BaseModel):
@@ -83,16 +85,18 @@ class SlotSummary(BaseModel):
 
 
 class PartyDetails(BaseModel):
-    """Everything the confirmation page may show. Deliberately no phone, email, or notes."""
+    """Everything the confirmation page may show. Deliberately no phone or email."""
 
     confirmation_code: str | None
     # The manage page's credential, present only on a booked party; never on a pending hold.
     manage_token: str | None = None
     first_name: str | None
-    # The birthday child, shown only once booked (never on a pending hold).
+    # The birthday child and the notes, shown only once booked (never on a pending hold): they are the
+    # parent's own words, not exposed before there is a real booking to attach them to.
     kid_name: str | None = None
     kid_age: int | None = None
     birthday: date | None = None
+    notes: str | None = None
     package: str
     package_label: str
     day_label: str
@@ -180,6 +184,9 @@ class AddonsIn(BaseModel):
 
     addons: dict[str, int] = Field(default_factory=dict)
     kids: int = Field(ge=1, le=30)
+    # Replaces the booking's notes verbatim (trimmed, capped). None means "leave the stored notes alone",
+    # which is what a caller that has never heard of notes gets by default.
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class RequestCreate(BaseModel):

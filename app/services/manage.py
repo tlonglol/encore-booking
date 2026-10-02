@@ -215,12 +215,23 @@ def merge_additions(current: dict[str, int], requested: dict[str, int]) -> dict[
 
 
 def add_to_booking(
-    db: Session, booking_id: int, addons: dict[str, int], kids: int, cutoff_hours: int, now: datetime
+    db: Session,
+    booking_id: int,
+    addons: dict[str, int],
+    kids: int,
+    cutoff_hours: int,
+    now: datetime,
+    notes: str | None = None,
 ) -> tuple[Booking, Quote]:
     """Re-prices the party with the additions through the same quote() everything else uses.
 
     The deposit never moves: the whole increase lands in what is due at the party. Nothing here talks to
     Square, because nothing here charges anything.
+
+    `notes`, like the add-ons, can only be replaced under the same cutoff; unlike them, it is not an
+    addition that has to grow, so a notes-only edit (nothing added, headcount unchanged) is a real change
+    rather than the no-op the guard below would otherwise call it. `None` means the caller never mentioned
+    notes at all and the stored value is left untouched; a caller that means to clear them sends "".
     """
     booking = _lock_live_booking(db, booking_id)
     if not addons_open(booking, cutoff_hours, now):
@@ -232,7 +243,9 @@ def add_to_booking(
         db.rollback()
         raise NotEligible("Headcount can only go up here. To reduce it, call (646) 203-8087.")
     merged = merge_additions(booking.addons, addons)
-    if merged == booking.addons and kids == booking.kids:
+    new_notes = notes.strip() or None if notes is not None else booking.notes
+    notes_changed = notes is not None and new_notes != booking.notes
+    if merged == booking.addons and kids == booking.kids and not notes_changed:
         db.rollback()
         raise NotEligible("Nothing was added.")
 
@@ -241,6 +254,7 @@ def add_to_booking(
     booking.addons = priced.addons
     booking.line_items = priced.line_items_json()
     booking.total_cents = priced.total_cents
+    booking.notes = new_notes
     db.commit()
     db.refresh(booking)
     return booking, priced

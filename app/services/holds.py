@@ -76,6 +76,7 @@ class CheckoutInput:
     kid_name: str
     kid_age: int
     birthday: date | None = None
+    notes: str | None = None
 
 
 def check_birthday(birthday: date | None, today: date) -> date | None:
@@ -392,6 +393,7 @@ def checkout_hold(db: Session, hold_id: uuid.UUID, data: CheckoutInput, today: d
     hold.kid_name = data.kid_name.strip()
     hold.kid_age = data.kid_age
     hold.birthday = birthday
+    hold.notes = (data.notes or "").strip() or None
     db.commit()
     db.refresh(hold)
     return hold
