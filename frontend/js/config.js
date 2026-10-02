@@ -1,3 +1,4 @@
-// The only per-environment setting. Empty string means "same origin as this page" (local uvicorn or ngrok).
-// For a split deploy, set it to the API's origin, e.g. "https://xyz.lambda-url.us-east-1.on.aws".
+// The only per-environment setting. Empty string means "same origin as this page", which is every way
+// this runs today: local uvicorn, ngrok, and the Lambda, which serves these files and the API itself.
+// Set it to an API origin only if the frontend is ever hosted somewhere separate.
 window.ENCORE_CONFIG = { apiOrigin: "" };
