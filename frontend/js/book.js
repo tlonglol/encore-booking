@@ -46,6 +46,7 @@
     busy: false,
     deadline: null,
     timer: null,
+    gridTimer: null,
     popover: null,
     picked: null,
     birthdayNote: "",
@@ -65,15 +66,28 @@
     const saved = {};
     DRAFT_KEYS.forEach((key) => { saved[key] = draft[key]; });
     store(KEY, saved);
-    saveHold();
   }
 
   // The contact details stay in the tab that typed them; only the hold travels, because every tab in this
   // browser has to know a date is already being held or confirming another one would hold a second date.
-  function saveHold() {
-    if (!draft.holdId) return keep(HOLD_KEY, null);
+  // Written only where the server has just confirmed this hold is live, so a tab sitting on a dead hold
+  // can never overwrite the pointer of a tab that has a real one.
+  function rememberHold() {
     const pointer = {};
     HOLD_FIELDS.forEach((key) => { pointer[key] = draft[key]; });
+    keep(HOLD_KEY, pointer);
+  }
+
+  // Dropping a hold clears the pointer only while it still names that hold: another tab may own a newer one.
+  function forgetHold(dropped) {
+    const pointer = kept(HOLD_KEY);
+    if (pointer && (!dropped || pointer.holdId === dropped)) keep(HOLD_KEY, null);
+  }
+
+  function noteStep() {
+    const pointer = kept(HOLD_KEY);
+    if (!pointer || pointer.holdId !== draft.holdId) return;
+    pointer.step = draft.step;
     keep(HOLD_KEY, pointer);
   }
 
@@ -97,6 +111,7 @@
   }
 
   function clearDraft() {
+    const dropped = draft.holdId;
     draft.mode = null;
     draft.seenAddons = false;
     draft.seenInfo = false;
@@ -108,6 +123,7 @@
     draft.expiresAt = null;
     stopTimer();
     save();
+    forgetHold(dropped);
   }
 
   function pkg(key) {
@@ -212,6 +228,8 @@
     ui.popover = null;
     ui.policyOpen = false;
     save();
+    if (step === "date") startGridPoll();
+    else stopGridPoll();
     if (step === "date") renderDate();
     else if (step === "plan") renderPlan();
     else if (step === "addons") renderAddons();
@@ -220,6 +238,7 @@
     renderMoney();
     renderAdvance();
     document.documentElement.setAttribute("data-tier", draft.package || "none");
+    noteStep();
     renderHoldHead();
     window.scrollTo({ top: 0, behavior: REDUCED.matches ? "auto" : "smooth" });
   }
@@ -620,6 +639,21 @@
   }
 
   const MORE_STEP = 8;
+  const GRID_POLL_MS = 30000;
+
+  // Someone else's hold lapses, or another tab of this browser swaps a date away: either way the grid in
+  // front of the parent is wrong until it asks again. Only while the grid is the thing on screen.
+  function startGridPoll() {
+    if (ui.gridTimer) return;
+    ui.gridTimer = setInterval(() => {
+      if (ui.step === "date" && !document.hidden && !ui.busy) loadGrid();
+    }, GRID_POLL_MS);
+  }
+
+  function stopGridPoll() {
+    clearInterval(ui.gridTimer);
+    ui.gridTimer = null;
+  }
 
   async function loadGrid() {
     const query = ui.weekends ? `?weekends=${ui.weekends}` : "";
@@ -666,6 +700,12 @@
       const gap = (new Date(draft.date + "T12:00:00") - new Date(last + "T12:00:00")) / DAY_MS;
       ui.weekends = Math.min(ui.maxWeekends, ui.weekends + Math.ceil(gap / 7) + 1);
       return loadGrid();
+    }
+    // We believe we hold a date and the grid just said it is free: the hold is gone, expired or swapped
+    // away in another tab. The server settles which, and shows the modal if the parent needs telling.
+    if (holding()) {
+      const ours = ui.days.find((day) => day.slot_id === draft.slotId);
+      if (ours && ours.status !== "held") await syncHold();
     }
     if (ui.picked && ui.picked.slot_id) {
       const fresh = ui.days.find((d) => d.date === ui.picked.date);
@@ -1101,7 +1141,8 @@
     }
     if (ui.busy) return;
     ui.busy = true;
-    const previous = holding() ? draft.holdId : null;
+    const pointer = kept(HOLD_KEY);
+    const previous = (pointer && pointer.holdId) || (holding() ? draft.holdId : null);
     const { status, data } = await api("/api/holds", {
       method: "POST",
       body: { slot_id: day.slot_id, replace_hold_id: previous },
@@ -1117,6 +1158,7 @@
       draft.expiresAt = data.expires_at;
       ui.picked = null;
       save();
+      rememberHold();
       setDeadline(data.seconds_remaining);
       pushDraft();
       go(afterDate());
@@ -1607,18 +1649,38 @@
     });
   }
 
+  // Another tab of this browser may hold a date that this tab has never heard of, or may have swapped the
+  // one this tab was using. Adopting it beats telling the parent their hold is gone when it plainly is not.
+  async function adoptBrowserHold() {
+    const pointer = kept(HOLD_KEY);
+    if (!pointer || !pointer.holdId || pointer.holdId === draft.holdId) return false;
+    const { status, data } = await api(`/api/holds/${pointer.holdId}`);
+    if (status !== 200 || data.status !== "pending_payment") {
+      forgetHold(pointer.holdId);
+      return false;
+    }
+    HOLD_FIELDS.forEach((key) => { if (pointer[key] !== undefined && pointer[key] !== null) draft[key] = pointer[key]; });
+    draft.expiresAt = data.expires_at;
+    ui.picked = null;
+    save();
+    setDeadline(data.seconds_remaining);
+    return true;
+  }
+
   // Ask the server how long is left. Used on boot, when the tab comes back and when a cached page is restored.
   async function syncHold() {
     if (!holding()) return;
     const { status, data } = await api(`/api/holds/${draft.holdId}`);
-    if (status === 404) return showHoldModal("gone");
+    if (status === 404) return (await adoptBrowserHold()) ? renderHoldHead() : showHoldModal("gone");
     if (status !== 200) return;
     if (data.status === "pending_payment") {
       draft.expiresAt = data.expires_at;
       save();
+      rememberHold();
       setDeadline(data.seconds_remaining);
       return;
     }
+    if (await adoptBrowserHold()) return renderHoldHead();
     showHoldModal(data.status);
   }
 
@@ -1669,6 +1731,7 @@
       draft.holdId = data.hold_id;
       draft.expiresAt = data.expires_at;
       save();
+      rememberHold();
       holdModalClose();
       setDeadline(data.seconds_remaining);
       renderHoldHead();
@@ -1786,15 +1849,20 @@
     // A hold from an earlier visit: ask the server how long is left (never restart locally). A hold the server
     // has never heard of is dropped; one that merely expired is kept so the parent can re-hold it.
     let staleStatus = null;
+    let live = false;
     if (holding()) {
       const check = await api(`/api/holds/${draft.holdId}`);
       if (check.status === 404) clearDraft();
       else if (check.status === 200 && check.data.status === "pending_payment") {
         draft.expiresAt = check.data.expires_at;
         save();
+        rememberHold();
         setDeadline(check.data.seconds_remaining);
+        live = true;
       } else if (check.status === 200) staleStatus = check.data.status;
     }
+    // This tab has no live hold of its own, but another tab of this browser may be holding a date right now.
+    if (!live && (await adoptBrowserHold())) staleStatus = null;
     if (draft.package) requote();
 
     $("rail-handle").addEventListener("click", () => {
@@ -1821,7 +1889,9 @@
     });
     // A tab that slept can have a stale local clock: the server's number is the only one that counts.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && ui.catalog && !ui.holdModal) syncHold();
+      if (document.visibilityState !== "visible" || !ui.catalog) return;
+      if (!ui.holdModal) syncHold();
+      if (ui.step === "date") loadGrid();
     });
     // The modal has no other way out than its two buttons.
     $("hold-modal").addEventListener("cancel", (event) => event.preventDefault());
