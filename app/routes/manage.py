@@ -127,20 +127,23 @@ def post_cancel(token: str, body: CancelIn, db: Session = Depends(get_db)) -> An
                 "offer_reschedule": can_reschedule(booking, venue_today(datetime.now(UTC))),
             },
         )
-    refund = send_refund(db, settings, result.refund_id) if result.refund_id else None
+    # A queued refund is not sent: the owner approves it in admin. Everything else goes to Square now.
+    refund = None if result.refund_queued else (send_refund(db, settings, result.refund_id) if result.refund_id else None)
     db.refresh(booking)
     notify_owner(
         db,
         settings,
         booking,
-        owner_cancelled_text(booking, refunded=refund is not None, queued=result.refund_queued),
+        owner_cancelled_text(
+            booking, refunded=refund is not None, queued=result.refund_queued, why=result.queued_reason
+        ),
         event="cancelled",
     )
     return CancelOut(
         status="cancelled",
         refunded=refund is not None and refund.status in ("pending", "completed"),
         refund_queued=result.refund_queued,
-        amount_cents=refund.amount_cents if refund else 0,
+        amount_cents=(refund.amount_cents if refund else booking.paid_amount_cents if result.refund_id else 0),
         message=_cancel_message(refund, result.refund_queued),
         settlement_notice=SETTLEMENT_NOTICE,
     )

@@ -238,20 +238,97 @@
     );
   }
 
-  const TABS = { bookings, requests, flags, dates, notifications, leads };
+  const REFUND_PILL = {
+    pending_approval: ["warn", "Waiting for you"],
+    pending: ["", "Sent to Square"],
+    completed: ["ok", "Refunded"],
+    failed: ["bad", "Failed"],
+    rejected: ["bad", "Rejected"],
+  };
+
+  async function refunds() {
+    const [refundRes, repeatRes] = await Promise.all([
+      guarded("/api/admin/refunds"),
+      guarded("/api/admin/repeat-cancellers"),
+    ]);
+    if (refundRes.status !== 200) return refundRes.status === 401 ? null : problem(refundRes.data);
+    const repeats = repeatRes.status === 200 ? repeatRes.data : [];
+    if (!refundRes.data.length && !repeats.length) {
+      return panel.replaceChildren(empty("No refunds yet."));
+    }
+    panel.replaceChildren(
+      ...repeats.map((r) =>
+        el("article", { class: "card flagged" }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${r.name} has cancelled ${r.cancellations} bookings` }),
+            el("span", { class: "pill warn", text: "No auto-refund" }),
+          ]),
+          el("div", { class: "card-meta" }, [
+            el("a", { href: `tel:${r.phone}`, text: r.phone }), " · ", r.email,
+            ` · matched by ${r.identity} · last cancelled ${when(r.last_cancelled_at)}`,
+          ]),
+          el("div", { class: "card-meta small muted", text: "Their refunds wait here for you instead of sending themselves." }),
+        ])
+      ),
+      ...refundRes.data.map((r) => refundCard(r))
+    );
+  }
+
+  function refundCard(r) {
+    const [tone, label] = REFUND_PILL[r.status] || ["", r.status];
+    return el("article", { class: "card" + (r.status === "pending_approval" ? " flagged" : "") }, [
+      el("div", { class: "card-head" }, [
+        el("div", { class: "card-title", text: `${money(r.amount_cents)} · ${r.day_label} · ${r.package}` }),
+        el("span", { class: "pill " + tone, text: label }),
+      ]),
+      el("div", { class: "card-meta" }, [
+        el("b", { text: r.name }), " · ", el("a", { href: `tel:${r.phone}`, text: r.phone }), ` · ${r.email}`,
+      ]),
+      r.queued_reason ? el("div", { class: "body-text", text: r.queued_reason }) : null,
+      r.error ? el("div", { class: "body-text", text: `Square said: ${r.error}` }) : null,
+      el("div", {
+        class: "card-meta small muted",
+        text: `Code ${r.confirmation_code} · ${r.cancellations} cancellation${r.cancellations === 1 ? "" : "s"} from this parent · raised ${when(r.created_at)}`
+          + (r.sent_at ? ` · sent ${when(r.sent_at)}` : "")
+          + (r.settled_at ? ` · settled ${when(r.settled_at)}` : ""),
+      }),
+      r.status === "pending_approval"
+        ? el("div", { class: "card-actions" }, [
+            confirmButton("Approve refund", "Tap again to send to Square", async () => {
+              const result = await guarded(`/api/admin/refunds/${r.id}/approve`, { method: "POST" });
+              if (result.status !== 200) return problem(result.data);
+              refunds();
+            }),
+            confirmButton("Don't refund", "Tap again to reject", async () => {
+              const result = await guarded(`/api/admin/refunds/${r.id}/reject`, { method: "POST" });
+              if (result.status !== 200) return problem(result.data);
+              refunds();
+            }),
+          ])
+        : null,
+    ]);
+  }
+
+  const TABS = { bookings, refunds, requests, flags, dates, notifications, leads };
 
   async function counts() {
-    const [flagRes, noteRes, reqRes] = await Promise.all([
+    const [flagRes, noteRes, reqRes, refundRes] = await Promise.all([
       api("/api/admin/flags"),
       api("/api/admin/notifications"),
       api("/api/admin/requests"),
+      api("/api/admin/refunds"),
     ]);
     const openFlags = flagRes.status === 200 ? flagRes.data.filter((f) => !f.resolved_at).length : 0;
     const failed = noteRes.status === 200 ? noteRes.data.filter((n) => n.status === "failed").length : 0;
     const fresh = reqRes.status === 200 ? reqRes.data.filter((r) => r.status === "new").length : 0;
+    // Refunds waiting on the owner and refunds Square refused both need them to do something.
+    const waiting = refundRes.status === 200
+      ? refundRes.data.filter((r) => r.status === "pending_approval" || r.status === "failed").length
+      : 0;
     $("flag-count").textContent = openFlags ? ` ${openFlags}` : "";
     $("failed-count").textContent = failed ? ` ${failed} failed` : "";
     $("request-count").textContent = fresh ? ` ${fresh}` : "";
+    $("refund-count").textContent = waiting ? ` ${waiting}` : "";
   }
 
   function show(tab) {

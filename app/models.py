@@ -138,6 +138,10 @@ class Booking(Base):
             unique=True,
             postgresql_where=text("cancelled_at IS NULL"),
         ),
+        # Read by the repeat-canceller count, which looks a parent up three ways.
+        Index("bookings_card_fingerprint", "card_fingerprint", postgresql_where=text("card_fingerprint IS NOT NULL")),
+        Index("bookings_phone", "phone"),
+        Index("bookings_email", "email"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -163,6 +167,9 @@ class Booking(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     square_payment_id: Mapped[str] = mapped_column(Text, unique=True)
     square_order_id: Mapped[str] = mapped_column(Text)
+    # Square's own identifier for the card, derived from the number but never the number itself. It is what
+    # lets repeat cancellations be counted when the email and phone change but the card does not.
+    card_fingerprint: Mapped[str | None] = mapped_column(Text)
     paid_amount_cents: Mapped[int] = mapped_column(Integer)
     event_starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

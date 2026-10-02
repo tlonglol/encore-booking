@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # How long before the party self-serve add-on additions close. The food has to be ordered, so this
     # is the owner's number to confirm before launch.
     addon_cutoff_hours: int = 48
+    # How many deposits may refund themselves in one day before the rest wait for the owner to approve.
+    # An automatic refund moves real money with nobody in the loop, so there is a number.
+    refund_daily_cap: int = 3
     admin_password: str = ""
     session_secret: str = ""
     trust_proxy_headers: bool = False

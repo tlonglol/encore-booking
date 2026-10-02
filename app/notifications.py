@@ -148,9 +148,9 @@ def parent_review_sms(booking: Booking, review_url: str) -> str:
     )
 
 
-def owner_cancelled_text(booking: Booking, refunded: bool, queued: bool) -> str:
+def owner_cancelled_text(booking: Booking, refunded: bool, queued: bool, why: str | None = None) -> str:
     if queued:
-        deposit = f"{dollars(booking.paid_amount_cents)} refund QUEUED for your approval in admin"
+        deposit = f"{dollars(booking.paid_amount_cents)} refund QUEUED for your approval in admin ({why})"
     elif refunded:
         deposit = f"{dollars(booking.paid_amount_cents)} deposit refunded"
     else:

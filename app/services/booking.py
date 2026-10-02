@@ -32,6 +32,9 @@ class PaymentEvent:
     status: str
     amount_cents: int | None
     currency: str | None
+    # Square's identifier for the card, at payment.card_details.card.fingerprint. Absent for other tender
+    # types, which is why every guard that uses it falls back to the phone and the email.
+    card_fingerprint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,7 @@ def parse_payment_event(event: Any) -> PaymentEvent | None:
         return None
     money = payment.get("amount_money") or {}
     amount = money.get("amount")
+    card = ((payment.get("card_details") or {}).get("card") or {}).get("fingerprint")
     return PaymentEvent(
         event_id=str(event["event_id"]),
         event_type=event_type,
@@ -82,6 +86,7 @@ def parse_payment_event(event: Any) -> PaymentEvent | None:
         status=str(payment.get("status", "")),
         amount_cents=amount if isinstance(amount, int) else None,
         currency=money.get("currency"),
+        card_fingerprint=card if isinstance(card, str) and card else None,
     )
 
 
@@ -193,6 +198,7 @@ def _book(db: Session, hold: Hold, event: PaymentEvent) -> Booking:
         notes=hold.notes,
         square_payment_id=event.payment_id,
         square_order_id=event.order_id or "",
+        card_fingerprint=event.card_fingerprint,
         paid_amount_cents=event.amount_cents or 0,
         event_starts_at=slot.starts_at,
     )

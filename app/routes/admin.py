@@ -11,6 +11,7 @@ from app.services.admin_auth import COOKIE_NAME, SESSION_SECONDS, issue_token, p
 from app.notifications import addons_summary
 from app.pricing import PACKAGES
 from app.services import admin as admin_service
+from app.services.refunds import REPEAT_CANCELLER_THRESHOLD, send_refund
 from app.services.slots import SlotConflict, set_blocked
 from app.timeutil import VENUE_TZ, format_clock, format_date, format_day, format_time
 
@@ -167,6 +168,66 @@ def cancel(booking_id: int, body: CancelIn, db: Session = Depends(get_db)) -> di
     except admin_service.AlreadyCancelled as error:
         raise HTTPException(status_code=409, detail="Booking is already cancelled") from error
     return {"id": result.booking_id, "cancelled_at": result.cancelled_at.isoformat(), "full_refund": result.full_refund}
+
+
+@router.get("/refunds", dependencies=[Depends(require_admin)])
+def refunds(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": row.id,
+            "status": row.status,
+            "amount_cents": row.amount_cents,
+            "queued_reason": row.queued_reason,
+            "error": row.error,
+            "created_at": row.created_at.isoformat(),
+            "sent_at": row.sent_at.isoformat() if row.sent_at else None,
+            "settled_at": row.settled_at.isoformat() if row.settled_at else None,
+            "square_refund_id": row.square_refund_id,
+            "booking_id": row.booking_id,
+            "confirmation_code": row.confirmation_code,
+            "name": f"{row.first_name} {row.last_name}",
+            "phone": row.phone,
+            "email": row.email,
+            "package": PACKAGES[row.package].label,
+            "cancellations": row.cancellations,
+            **_when(row.event_starts_at),
+        }
+        for row in admin_service.list_refunds(db)
+    ]
+
+
+@router.post("/refunds/{refund_id}/approve", dependencies=[Depends(require_admin)])
+def approve_refund(refund_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Releases a queued refund down the same path an automatic one takes, idempotency key and all."""
+    if not admin_service.approve_refund(db, refund_id):
+        raise HTTPException(status_code=404, detail="No refund waiting for approval with that id")
+    refund = send_refund(db, get_settings(), refund_id)
+    assert refund is not None
+    return {"id": refund.id, "status": refund.status, "error": refund.error}
+
+
+@router.post("/refunds/{refund_id}/reject", dependencies=[Depends(require_admin)])
+def reject_refund(refund_id: int, db: Session = Depends(get_db)) -> dict[str, bool]:
+    """The owner decides this one is not refunded. Nothing is sent to Square."""
+    if not admin_service.reject_refund(db, refund_id):
+        raise HTTPException(status_code=404, detail="No refund waiting for approval with that id")
+    return {"ok": True}
+
+
+@router.get("/repeat-cancellers", dependencies=[Depends(require_admin)])
+def repeat_cancellers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Parents whose refunds queue instead of sending themselves, and the count behind the flag."""
+    return [
+        {
+            "identity": "card" if row.by_card else "email",
+            "name": row.name,
+            "email": row.email,
+            "phone": row.phone,
+            "cancellations": row.cancellations,
+            "last_cancelled_at": row.last_cancelled_at.isoformat(),
+        }
+        for row in admin_service.list_repeat_cancellers(db, REPEAT_CANCELLER_THRESHOLD)
+    ]
 
 
 @router.get("/flags", dependencies=[Depends(require_admin)])
