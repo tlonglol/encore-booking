@@ -11,6 +11,16 @@ from tests.conftest import FakeMessaging
 from tests.helpers import client, client_from, make_booking, make_hold, make_slot, next_saturday, today
 
 
+@pytest.fixture(autouse=True)
+def door_open(monkeypatch: pytest.MonkeyPatch):
+    """These cases prove the request path still works, which is the point of keeping it: it is shut by a
+    flag in v1, not deleted. test_requests_door.py covers it being shut."""
+    monkeypatch.setenv("REQUESTS_ENABLED", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def next_weekday(days_ahead: int = 7) -> date:
     day = today() + timedelta(days=days_ahead)
     while day.weekday() >= 5:

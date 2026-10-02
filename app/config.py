@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     tax_mode: Literal["included", "line_item"] = "included"
     tax_rate_percent: Decimal = Decimal("0")
     weekend_default: Literal["open", "request"] = "open"
+    # The weekday-request door. Off: POST /api/requests answers 404, the way a door nobody can see
+    # should answer. The table, the code and the admin list stay, so it reopens with one variable.
+    requests_enabled: bool = False
     weekends_ahead: int = 8
     # How long before the party self-serve add-on additions close. The food has to be ordered, so this
     # is the owner's number to confirm before launch.

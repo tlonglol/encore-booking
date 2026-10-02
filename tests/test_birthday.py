@@ -1,7 +1,10 @@
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
+
+from app.config import get_settings
 
 from tests.helpers import (
     admin_client,
@@ -104,9 +107,12 @@ def test_checkout_rejects_a_past_birthday_and_changes_nothing(db: Session) -> No
     assert client().get(f"/api/holds/{hold_id}").json()["checkout_url"] is None
 
 
-def test_request_carries_the_birthday_to_admin(db: Session) -> None:
+def test_request_carries_the_birthday_to_admin(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The request door is shut in v1, so this opens it: the path has to keep working for the day it reopens."""
     from tests.test_requests import next_weekday, request_body
 
+    monkeypatch.setenv("REQUESTS_ENABLED", "true")
+    get_settings.cache_clear()
     day = next_weekday(10)
     birthday = today() + timedelta(days=30)
     body = request_body(day, 8, birthday=birthday.isoformat(), kid_name="Mia", kid_age=9)

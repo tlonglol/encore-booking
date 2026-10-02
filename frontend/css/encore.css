@@ -1555,7 +1555,11 @@ body.has-pill { --pill-clear: 52px; }
 .hold-pill {
   position: fixed;
   top: 78px;
-  right: 1rem;
+  /* Anchored right, so it keeps a real margin from the edge even on a phone with a notch. */
+  right: calc(1rem + env(safe-area-inset-right, 0px));
+  /* Shrink-to-fit with no cap overflows past its own right edge once the content outgrows the screen,
+     which is how it ran off the edge. This makes that impossible at any width or text size. */
+  max-width: calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
   z-index: 99;
   display: flex;
   align-items: center;
@@ -1565,9 +1569,11 @@ body.has-pill { --pill-clear: 52px; }
   border-radius: 999px;
   background: var(--card2);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
 }
 .pill-icon { width: 14px; height: 14px; flex: none; color: var(--gray); }
 .pill-clock {
+  flex: none;
   font-family: var(--body);
   font-variant-numeric: tabular-nums;
   font-size: 15px;
@@ -1584,6 +1590,16 @@ body.has-pill { --pill-clear: 52px; }
   text-transform: uppercase;
   color: var(--blue-light);
 }
+/* If anything has to give, it is the date text: the countdown and the way out are the point of the pill. */
+.pill-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pill-time::before {
+  content: "\00b7";
+  display: inline-block;
+  margin: 0 6px;
+  color: var(--gray);
+  font-weight: 400;
+  letter-spacing: 0;
+}
 .pill-when-short, .pill-action-short { display: none; }
 .pill-when::before, .pill-action::before {
   content: "\00b7";
@@ -1595,6 +1611,7 @@ body.has-pill { --pill-clear: 52px; }
   text-decoration: none;
 }
 .pill-action {
+  flex: none;
   font-family: var(--condensed);
   font-size: 12px;
   font-weight: 600;
@@ -1613,9 +1630,21 @@ body.has-pill { --pill-clear: 52px; }
 .pill-action:hover { color: var(--blue-light); text-decoration-color: var(--blue-light); }
 .hold-pill[hidden] { display: none; }
 
+/* The start time goes before any text is ever clipped, well before the pill actually runs out of room. */
+@media (max-width: 720px) {
+  .pill-time { display: none; }
+}
+
 /* Phone: docked under the header, full width less its margins, and compacted. */
 @media (max-width: 560px) {
-  .hold-pill { left: 0.75rem; right: 0.75rem; justify-content: center; border-radius: 10px; padding: 8px 12px; }
+  .hold-pill {
+    left: calc(0.75rem + env(safe-area-inset-left, 0px));
+    right: calc(0.75rem + env(safe-area-inset-right, 0px));
+    max-width: none;
+    justify-content: center;
+    border-radius: 10px;
+    padding: 8px 12px;
+  }
   /* Docked across the top here, so the page below starts under it rather than behind it. */
   body.has-pill .funnel, body.has-pill .wrap { padding-top: calc(1.5rem + var(--pill-clear)); }
   .pill-when { display: none; }

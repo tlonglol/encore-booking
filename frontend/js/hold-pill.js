@@ -20,10 +20,15 @@
     node.className = "hold-pill";
     node.id = "hold-pill";
     node.hidden = true;
+    // The day and the time are separate elements so the time can be dropped on its own when the pill runs
+    // out of room. The clock and the action never drop: they are the two things the pill exists to show.
     node.innerHTML =
       CLOCK_ICON +
       '<span class="pill-clock" id="pill-clock" role="timer"></span>' +
-      '<span class="pill-when" id="pill-when"></span>' +
+      '<span class="pill-when" id="pill-when">' +
+      '<span class="pill-day" id="pill-day"></span>' +
+      '<span class="pill-time" id="pill-time"></span>' +
+      "</span>" +
       '<span class="pill-when-short" id="pill-when-short"></span>' +
       '<button class="pill-action" id="pill-action" type="button">' +
       '<span class="pill-action-long" id="pill-action-long"></span>' +
@@ -52,7 +57,8 @@
     if (clockNode.textContent !== text) clockNode.textContent = text;
     clockNode.classList.toggle("low", !notice && seconds !== null && seconds < LOW_SECONDS);
     clockNode.setAttribute("aria-label", notice || (seconds === null ? "On hold" : `${text} left on your hold`));
-    document.getElementById("pill-when").textContent = timeLabel ? `${dayLabel} · ${timeLabel}` : dayLabel;
+    document.getElementById("pill-day").textContent = dayLabel || "";
+    document.getElementById("pill-time").textContent = timeLabel || "";
     document.getElementById("pill-when-short").textContent = shortLabel || dayLabel;
     const action = document.getElementById("pill-action");
     action.hidden = !actionText;

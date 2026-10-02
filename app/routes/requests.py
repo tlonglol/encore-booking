@@ -15,7 +15,16 @@ from app.timeutil import format_clock, format_date, venue_today
 router = APIRouter()
 
 
-@router.post("/api/requests", status_code=201)
+def require_requests_enabled() -> None:
+    """The funnel takes no requests in v1, and a closed door that still answers is a door. As a dependency
+    rather than a check in the body, so a malformed request is refused before it is ever validated: a 422
+    would tell a prober the endpoint exists and what shape it wants. The table, the service and the admin
+    list all stay, so reopening this is one environment variable."""
+    if not get_settings().requests_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+@router.post("/api/requests", status_code=201, dependencies=[Depends(require_requests_enabled)])
 def post_request(body: RequestCreate, request: Request, db: Session = Depends(get_db)) -> RequestOut:
     settings = get_settings()
     data = RequestInput(
