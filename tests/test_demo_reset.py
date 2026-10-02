@@ -91,7 +91,9 @@ def test_reset_clears_whatever_the_last_run_left_behind(db: Session) -> None:
     slot = make_slot(db, today() + timedelta(days=30))
     stale = make_booking(db, make_hold(db, slot), slot)
     client().post(f"/api/manage/{stale.manage_token}/cancel", json={})
-    db.execute(text("INSERT INTO waitlist (email) VALUES ('old@example.com')"))
+    db.execute(
+        text("INSERT INTO waitlist (slot_id, email) VALUES (:slot, 'old@example.com')"), {"slot": slot.id}
+    )
     db.commit()
 
     admin_client().post("/api/admin/demo/reset")

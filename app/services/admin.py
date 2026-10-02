@@ -208,9 +208,29 @@ def list_notifications(db: Session, limit: int = 100) -> list[Row]:
     )
 
 
+def list_waitlist(db: Session) -> list[Row]:
+    """Everyone waiting, newest first, each row carrying the date it is waiting for.
+
+    Ordered by the party date rather than by signup time: the owner reads this to decide whether a
+    sold-out Saturday is worth opening a second slot for, and that question is asked per date.
+    """
+    return list(
+        db.execute(
+            text(
+                """
+                SELECT w.id, w.email, w.phone, w.created_at, w.notified_at,
+                       s.local_date, s.starts_at,
+                       count(*) OVER (PARTITION BY w.slot_id) AS waiting_on_this_date
+                FROM waitlist w JOIN slots s ON s.id = w.slot_id
+                ORDER BY s.local_date, w.created_at
+                """
+            )
+        )
+    )
+
+
 def list_leads(db: Session) -> dict[str, list[Row]]:
-    """Follow-up material for the owner: waitlist signups, and holds that captured an email but never paid."""
-    waitlist = db.execute(text("SELECT id, email, created_at FROM waitlist ORDER BY created_at DESC"))
+    """Holds that captured an email and never paid. The waitlist has its own view."""
     abandoned = db.execute(
         text(
             """
@@ -225,7 +245,7 @@ def list_leads(db: Session) -> dict[str, list[Row]]:
             """
         )
     )
-    return {"waitlist": list(waitlist), "abandoned": list(abandoned)}
+    return {"abandoned": list(abandoned)}
 
 
 def list_requests(db: Session) -> list[Row]:

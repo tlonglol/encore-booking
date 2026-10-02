@@ -1816,3 +1816,54 @@ body.has-ribbon .nav, body.has-ribbon .banner { padding-top: 0; top: var(--ribbo
   margin-top: 0.5rem;
 }
 .card-note-error { color: var(--warn); }
+
+
+/* ---- Per-date waitlist ----
+   A taken date is clickable so it can open this panel, but it must never read as available: the card
+   keeps its BOOKED / ON HOLD styling and its state word, and only gains a quiet "Notify me" affordance.
+   The panel is a sibling of the card button, because a form cannot live inside a <button>. */
+.wk-cell { display: flex; flex-direction: column; gap: 8px; }
+.wk-cell > .wk-card { flex: 1; }
+.wk-card.booked, .wk-card.held { cursor: pointer; }
+.wk-notify {
+  margin-top: auto;
+  font-family: var(--condensed);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--blue-light);
+  text-decoration: underline;
+}
+.wk-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--card2);
+  border: 1px solid var(--border-blue);
+  border-radius: 6px;
+}
+.wk-ask-lede { font-family: var(--body); font-size: 13px; color: var(--gray-light); margin: 0; }
+.wk-ask .field { margin: 0; }
+.wk-joined {
+  margin: 0;
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--tier-standard);
+}
+
+/* The grid is two columns; an open panel spans both so the fields are not squeezed into half a phone. */
+@media (min-width: 560px) {
+  .wk-cards:has(.wk-ask) { grid-template-columns: 1fr 1fr; }
+  .wk-cell:has(.wk-ask) { grid-column: 1 / -1; }
+}
+
+.grid-foot {
+  margin-top: 1rem;
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--gray);
+  text-align: center;
+}
+.grid-foot a { color: var(--blue-light); }

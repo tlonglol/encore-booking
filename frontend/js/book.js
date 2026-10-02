@@ -48,6 +48,10 @@
     timer: null,
     gridTimer: null,
     popover: null,
+    // Which date's waitlist panel is open, and the dates this page view has already signed up for.
+    // Both are view state only: the server holds the signup, this just stops the panel reopening.
+    waitlistOpen: null,
+    waitlisted: {},
     picked: null,
     birthdayNote: "",
     policyOpen: false,
@@ -609,33 +613,16 @@
       strip,
       el("div", { id: "step-notice", "aria-live": "polite" }),
       el("div", { id: "slots" }, [el("p", { class: "muted", text: "Loading dates…" })]),
-      el("div", { class: "asks" }, [
-        el("button", {
-          type: "button",
-          class: "btn btn-ghost btn-block",
-          text: "Don't see your date? Get notified",
-          onclick: () => toggleAsk("waitlist"),
-        }),
-        el("form", { class: "ask-form", id: "waitlist-form", hidden: true, onsubmit: submitWaitlist }, [
-          el("div", { class: "field" }, [
-            el("label", { for: "waitlist-email", text: "Your email" }),
-            el("input", { id: "waitlist-email", type: "email", inputmode: "email", autocomplete: "email", placeholder: "you@email.com", required: true }),
-          ]),
-          el("button", { type: "submit", class: "btn btn-primary", text: "Notify me" }),
-          el("p", { class: "ask-note", id: "waitlist-note", role: "status" }),
-        ]),
+      el("p", { class: "grid-foot" }, [
+        "Don't see your date? Pick any booked date above to get notified, or call ",
+        el("a", { href: "tel:+16462038087", text: "(646) 203-8087" }),
+        ".",
       ])
     );
     renderDiff(null);
     renderGrid();
     setSegments(draft.birthday);
     loadGrid();
-  }
-
-  function toggleAsk(which) {
-    const form = $(which + "-form");
-    form.hidden = !form.hidden;
-    if (!form.hidden) form.querySelector("input").focus();
   }
 
   const MORE_STEP = 8;
@@ -692,7 +679,7 @@
     }
     ui.birthdayNote =
       draft.birthday && draft.birthday > data.days[data.days.length - 1].date
-        ? "Weekends that far out aren't open for online booking yet. Call (646) 203-8087, or get notified below."
+        ? "Weekends that far out aren't open for online booking yet. Call (646) 203-8087."
         : "";
     // A date held further out than the list reaches must stay visible: widen the list to cover it.
     const last = data.days[data.days.length - 1].date;
@@ -743,21 +730,33 @@
   }
 
   // One date card, with its live state in words. Used by every layout of the grid.
+  //
+  // A taken date is still clickable, but for a different reason than an open one: it opens the waitlist
+  // panel. It keeps its BOOKED or ON HOLD word and styling throughout, because a date someone else has
+  // must never look even slightly available. The panel is a sibling of the button, not a child: a form
+  // cannot live inside a <button>.
   function dayCard(day, price, prefix) {
     const mine = holding() && day.slot_id === draft.slotId;
     const picked = Boolean(ui.picked) && ui.picked.date === day.date;
     const tappable = mine || day.status === "open";
+    const waitable = !mine && (day.status === "booked" || day.status === "held");
     const label = picked ? "Selected" : mine ? "Your date" : STATUS_TEXT[day.status];
     const live = day.status === "open" || mine;
-    return el(
+    const joined = ui.waitlisted[day.slot_id];
+    const open = ui.waitlistOpen === day.slot_id && !joined;
+
+    const card = el(
       "button",
       {
         type: "button",
         class: `wk-card ${picked || mine ? "open yours" : day.status}`,
-        disabled: !tappable,
+        disabled: !tappable && !waitable,
         "aria-pressed": String(picked),
-        "aria-label": `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
-        onclick: !tappable ? null : () => selectDate(day),
+        "aria-expanded": waitable ? String(open) : null,
+        "aria-label": waitable
+          ? `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}. Get notified if it opens up.`
+          : `${day.day_label} ${day.time_label || "10:00 AM"}, ${label}`,
+        onclick: tappable ? () => selectDate(day) : waitable ? () => toggleWaitlist(day) : null,
       },
       [
         el("span", { class: "wk-date", text: day.day_label }),
@@ -767,8 +766,62 @@
           : null,
         el("span", { class: "wk-state" }, [el("span", { text: label })]),
         !mine && day.status === "held" ? el("span", { class: "wk-hint", text: "May free up in a few minutes" }) : null,
+        waitable && !joined ? el("span", { class: "wk-notify", text: open ? "Close" : "Notify me" }) : null,
       ]
     );
+
+    if (!waitable) return card;
+    return el("div", { class: "wk-cell" }, [
+      card,
+      joined ? el("p", { class: "wk-joined", role: "status", text: joined }) : null,
+      open ? waitlistPanel(day) : null,
+    ]);
+  }
+
+  // The ask, inline on the card that was clicked.
+  function waitlistPanel(day) {
+    const held = day.status === "held";
+    const noteId = `wl-note-${day.slot_id}`;
+    return el("form", { class: "wk-ask", onsubmit: (event) => submitWaitlist(event, day) }, [
+      el("p", {
+        class: "wk-ask-lede",
+        text: held
+          ? `${day.day_label} is on hold and may free up in a few minutes. Want a text if it does?`
+          : `${day.day_label} is booked. Want a text if it opens up?`,
+      }),
+      el("div", { class: "field" }, [
+        el("label", { for: `wl-email-${day.slot_id}`, text: "Your email" }),
+        el("input", {
+          id: `wl-email-${day.slot_id}`,
+          name: "email",
+          type: "email",
+          inputmode: "email",
+          autocomplete: "email",
+          placeholder: "you@email.com",
+          required: true,
+        }),
+      ]),
+      el("div", { class: "field" }, [
+        el("label", { for: `wl-phone-${day.slot_id}`, text: "Phone (optional)" }),
+        el("input", {
+          id: `wl-phone-${day.slot_id}`,
+          name: "phone",
+          type: "tel",
+          inputmode: "tel",
+          autocomplete: "tel",
+          placeholder: "(646) 000-0000",
+        }),
+      ]),
+      el("button", { type: "submit", class: "btn btn-primary btn-sm", text: "Notify me" }),
+      el("p", { class: "ask-note", id: noteId, role: "status" }),
+    ]);
+  }
+
+  function toggleWaitlist(day) {
+    ui.waitlistOpen = ui.waitlistOpen === day.slot_id ? null : day.slot_id;
+    renderGrid();
+    const field = $(`wl-email-${day.slot_id}`);
+    if (field) field.focus();
   }
 
   function weekendBlock(group, price, prefix, note) {
@@ -805,7 +858,12 @@
         found.noneNearby
           ? el("p", { class: "closest-none" }, [
               found.exhausted ? "No open weekends near that date. " : "The weekends right around that date are taken. ",
-              el("button", { type: "button", class: "link-btn", text: "Get notified", onclick: openWaitlist }),
+              el("button", {
+                type: "button",
+                class: "link-btn",
+                text: "Get notified",
+                onclick: () => openWaitlistFor(found.pinned),
+              }),
               " if one opens up.",
             ])
           : null,
@@ -824,17 +882,27 @@
     slots.replaceChildren(...children);
   }
 
-  function openWaitlist() {
-    const form = $("waitlist-form");
-    if (form && form.hidden) toggleAsk("waitlist");
-    if (form) form.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
+  // Opens the panel on the nearest date the copy is actually referring to, so the signup names a date
+  // rather than being the blind "notify me about something" this replaced.
+  function openWaitlistFor(pinned) {
+    const taken = (pinned || [])
+      .flatMap((entry) => entry.group)
+      .find((day) => day.status === "booked" || day.status === "held");
+    if (!taken) return;
+    ui.waitlistOpen = taken.slot_id;
+    renderGrid();
+    const field = $(`wl-email-${taken.slot_id}`);
+    if (field) {
+      field.scrollIntoView({ block: "center", behavior: REDUCED.matches ? "auto" : "smooth" });
+      field.focus();
+    }
   }
 
   // Loads further weekends on demand, MORE_STEP at a time, up to the server's cap.
   function moreWeekends() {
     if (!ui.weekends) return null;
     if (ui.weekends >= ui.maxWeekends) {
-      return el("p", { class: "more-end", text: "That's as far ahead as we book online. For later dates, call (646) 203-8087 or get notified below." });
+      return el("p", { class: "more-end", text: "That's as far ahead as we book online. For later dates, call (646) 203-8087." });
     }
     return el("div", { class: "more-wrap" }, [
       el("button", {
@@ -1878,18 +1946,29 @@
     $("compare").showModal();
   }
 
-  // ---------- secondary asks ----------
-  async function submitWaitlist(event) {
+  // ---------- waitlist ----------
+  async function submitWaitlist(event, day) {
     event.preventDefault();
-    const input = $("waitlist-email");
-    const note = $("waitlist-note");
-    if (!input.value.trim() || input.value.indexOf("@") < 0) {
+    const email = $(`wl-email-${day.slot_id}`);
+    const phone = $(`wl-phone-${day.slot_id}`);
+    const note = $(`wl-note-${day.slot_id}`);
+    if (!email.value.trim() || email.value.indexOf("@") < 0) {
       note.textContent = "Enter the email to notify.";
       return;
     }
-    const { status, data } = await api("/api/waitlist", { method: "POST", body: { email: input.value.trim() } });
-    note.textContent = status === 201 ? data.detail : detailText(data, "Couldn't save that. Try again.");
-    if (status === 201) input.value = "";
+    const body = { slot_id: day.slot_id, email: email.value.trim() };
+    if (phone.value.trim()) body.phone = phone.value.trim();
+    note.textContent = "Adding you…";
+    const { status, data } = await api("/api/waitlist", { method: "POST", body: body });
+    if (status === 201) {
+      // Collapses to a line on the card. Kept only for this page view: it is a courtesy, not a record,
+      // and the server already holds the real one.
+      ui.waitlisted[day.slot_id] = data.detail;
+      ui.waitlistOpen = null;
+      renderGrid();
+      return;
+    }
+    note.textContent = detailText(data, "Couldn't save that. Try again.");
   }
 
   // ---------- boot ----------

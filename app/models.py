@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -263,12 +264,22 @@ class PartyRequest(Base):
 
 
 class WaitlistEntry(Base):
-    # A parent who wants to hear when new dates open. Email only, captured from the grid page.
+    """A parent waiting on one specific date, captured from that date's own card on the grid.
+
+    Uniqueness is (email, slot_id): the same parent waiting on two Saturdays is two asks, not a
+    duplicate. notified_at stays null until something tells them the date reopened, which nothing does
+    yet (see SPEC, "Waitlist, not this pass").
+    """
+
     __tablename__ = "waitlist"
+    __table_args__ = (UniqueConstraint("email", "slot_id", name="waitlist_one_per_email_per_slot"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    email: Mapped[str] = mapped_column(Text, unique=True)
+    slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
     client_ip: Mapped[str | None] = mapped_column(INET)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

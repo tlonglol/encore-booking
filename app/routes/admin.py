@@ -167,10 +167,6 @@ def holds(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
 def leads(db: Session = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
     rows = admin_service.list_leads(db)
     return {
-        "waitlist": [
-            {"id": row.id, "email": row.email, "created_at": row.created_at.isoformat()}
-            for row in rows["waitlist"]
-        ],
         "abandoned": [
             {
                 "hold_id": str(row.id),
@@ -185,6 +181,24 @@ def leads(db: Session = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
             for row in rows["abandoned"]
         ],
     }
+
+
+@router.get("/waitlist", dependencies=[Depends(require_admin)])
+def waitlist(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Who is waiting, on which date, and how many others want the same one."""
+    return [
+        {
+            "id": row.id,
+            "email": row.email,
+            "phone": row.phone,
+            "created_at": row.created_at.isoformat(),
+            "notified_at": row.notified_at.isoformat() if row.notified_at else None,
+            "date": row.local_date.isoformat(),
+            "waiting_on_this_date": row.waiting_on_this_date,
+            **_when(row.starts_at),
+        }
+        for row in admin_service.list_waitlist(db)
+    ]
 
 
 @router.post("/bookings/{booking_id}/cancel", dependencies=[Depends(require_admin)])

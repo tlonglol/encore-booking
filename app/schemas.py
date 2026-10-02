@@ -199,7 +199,12 @@ class RequestCreate(BaseModel):
 
 
 class WaitlistIn(BaseModel):
+    """A signup always names the date it is waiting for. slot_id is required, so there is no shape of
+    this request that captures an email with no date attached."""
+
+    slot_id: int
     email: EmailStr
+    phone: str | None = None
 
 
 class RequestOut(BaseModel):

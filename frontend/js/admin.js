@@ -235,7 +235,7 @@
   async function leads() {
     const { status, data } = await guarded("/api/admin/leads");
     if (status !== 200) return status === 401 ? null : problem(data);
-    if (!data.waitlist.length && !data.abandoned.length) return panel.replaceChildren(empty("No waitlist signups or abandoned checkouts yet."));
+    if (!data.abandoned.length) return panel.replaceChildren(empty("No abandoned checkouts yet."));
     panel.replaceChildren(
       el("div", { class: "section-label", text: "Abandoned checkouts, last 14 days" }),
       ...(data.abandoned.length
@@ -254,15 +254,45 @@
               el("div", { class: "card-meta small muted", text: `${a.package ? `${a.package}, ${a.kids} kids · ` : "Left before choosing a package · "}started ${when(a.created_at)}` }),
             ])
           )
-        : [empty("None.")]),
-      el("div", { class: "section-label", text: "Waitlist" }),
-      ...(data.waitlist.length
-        ? data.waitlist.map((w) =>
-            el("article", { class: "card" }, [
-              el("div", { class: "card-meta" }, [el("a", { href: `mailto:${w.email}`, text: w.email }), ` · signed up ${when(w.created_at)}`]),
-            ])
-          )
         : [empty("None.")])
+    );
+  }
+
+  // Grouped by date, because the question the owner asks here is per date: is this Saturday worth
+  // opening a second slot for, or calling these people back about.
+  async function waitlist() {
+    const { status, data } = await guarded("/api/admin/waitlist");
+    if (status !== 200) return status === 401 ? null : problem(data);
+    if (!data.length) return panel.replaceChildren(empty("Nobody is waiting on a date yet."));
+
+    const dates = [];
+    data.forEach((row) => {
+      const group = dates.find((d) => d.date === row.date);
+      (group ? group.rows : (dates.push({ date: row.date, row: row, rows: [] }), dates[dates.length - 1].rows)).push(row);
+    });
+
+    panel.replaceChildren(
+      ...dates.map((group) =>
+        el("article", { class: "card" }, [
+          el("div", { class: "card-head" }, [
+            el("div", { class: "card-title", text: `${group.row.day_label} · ${group.row.time_label}` }),
+            el("span", {
+              class: group.rows.length > 1 ? "pill warn" : "pill",
+              text: group.rows.length === 1 ? "1 waiting" : `${group.rows.length} waiting`,
+            }),
+          ]),
+          ...group.rows.map((w) =>
+            el("div", { class: "card-meta" }, [
+              el("a", { href: `mailto:${w.email}`, text: w.email }),
+              w.phone ? [" · ", el("a", { href: `tel:${w.phone}`, text: w.phone })] : null,
+              el("span", { class: "small muted", text: ` · signed up ${when(w.created_at)}` }),
+              w.notified_at
+                ? el("span", { class: "small muted", text: ` · notified ${when(w.notified_at)}` })
+                : el("span", { class: "small muted", text: " · not notified" }),
+            ].flat().filter(Boolean))
+          ),
+        ])
+      )
     );
   }
 
@@ -370,7 +400,7 @@
     );
   }
 
-  const TABS = { bookings, holds, refunds, requests, flags, dates, notifications, leads };
+  const TABS = { bookings, holds, refunds, requests, flags, dates, notifications, leads, waitlist };
 
   async function counts() {
     const [flagRes, noteRes, reqRes, refundRes, holdRes] = await Promise.all([
