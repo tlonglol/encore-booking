@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from sqlalchemy.orm import Session
 
+from app.timeutil import slot_start_utc
 from tests.helpers import client, make_booking, make_hold, make_slot, next_saturday
 
 
@@ -12,8 +15,12 @@ def test_calendar_ics_for_a_booking(db: Session) -> None:
     body = response.text
     day = next_saturday(7)
     assert f"UID:{booking.confirmation_code}@book.encoregaming.us" in body
-    assert f"DTSTART:{day:%Y%m%d}T140000Z" in body, "10:00 AM New York is 14:00 UTC under EDT"
-    assert f"DTEND:{day:%Y%m%d}T170000Z" in body, "a Standard party runs 3 hours"
+    # The venue opens at 10:00 America/New_York, which is 14:00 UTC under EDT and 15:00 under EST. Asking
+    # the same function the slot was built with keeps this true on both sides of a changeover; the literal
+    # that used to be here was written in October and went wrong on its own the moment the clocks went back.
+    start = slot_start_utc(day)
+    assert f"DTSTART:{start:%Y%m%dT%H%M%SZ}" in body, "10:00 AM at the venue, converted rather than assumed"
+    assert f"DTEND:{start + timedelta(hours=3):%Y%m%dT%H%M%SZ}" in body, "a Standard party runs 3 hours"
     assert "SUMMARY:Encore Esports Standard party" in body
     assert "LOCATION:Encore Esports\\, 538 Main St\\, 2nd floor (entrance on Division St)" in body
     assert f"Confirmation {booking.confirmation_code}. $444 due at the party." in body
