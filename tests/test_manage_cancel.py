@@ -7,9 +7,17 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models import Booking, Refund
 from tests.conftest import FakeSquareApi
 from tests.helpers import client, make_booking, make_hold, make_slot, today, weekend_near
+
+
+@pytest.fixture
+def reset_settings():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def _booking_on(db: Session, days_away: int) -> Booking:
@@ -74,7 +82,14 @@ def test_cancel_inside_the_window_refuses_until_the_parent_confirms(db: Session,
     assert booking.cancelled_at is None
 
 
-def test_confirmed_cancel_inside_the_window_forfeits_the_deposit(db: Session, square_api: FakeSquareApi) -> None:
+def test_confirmed_cancel_inside_the_window_forfeits_the_deposit(
+    db: Session, square_api: FakeSquareApi, monkeypatch, reset_settings
+) -> None:
+    # MIN_LEAD_DAYS only applies to new holds, and a real party this close was booked long ago. With
+    # the default of 2, on a Saturday no weekend date is both bookable and under 7 days out, so the
+    # grid would say "past" instead of "open".
+    monkeypatch.setenv("MIN_LEAD_DAYS", "0")
+    get_settings.cache_clear()
     booking = _booking_on(db, days_away=3)
     response = client().post(
         f"/api/manage/{booking.manage_token}/cancel", json={"forfeit_deposit": True}

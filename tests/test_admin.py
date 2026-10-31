@@ -25,7 +25,12 @@ from tests.helpers import (
 )
 
 
-def _book(db: Session, days_ahead: int = 7, n: int = 1) -> tuple[str, str]:
+def _book(db: Session, days_ahead: int = 14, n: int = 1) -> tuple[str, str]:
+    """A paid booking far enough out that the refund window doesn't come into it.
+
+    This used to be 7 days, which broke on Saturdays: next_saturday(7) lands exactly a week out, and
+    the refund rule counts to the 10:00 start, so after 10am that's already inside the window.
+    """
     hold_id, ref = create_hold_via_api(db, days_ahead, n)
     deliver(payment_event(ref, payment_id=f"pay-{hold_id}"))
     code = client().get(f"/api/holds/{hold_id}").json()["party"]["confirmation_code"]
