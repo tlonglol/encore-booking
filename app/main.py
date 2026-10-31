@@ -77,17 +77,21 @@ app.include_router(manage.router)
 app.include_router(webhooks.router)
 app.include_router(admin.router)
 
-class RevalidatingFiles(StaticFiles):
-    """Browsers check back every time instead of running a stale copy of the scripts.
+class FrontendFiles(StaticFiles):
+    """Cache JS, CSS and images for 5 minutes. HTML always revalidates.
 
-    This is how the deploy serves the frontend too, not just local dev: a redeploy that changed book.js
-    has to reach a phone that already has the old one, and the asset filenames carry no content hash to
-    make that happen on its own. The cost is a revalidation request per asset, which a 304 answers.
+    Every static file here is a Lambda call, so a cold load of book.html is 12 requests at once.
+    With caching, a repeat visit is one.
+
+    Only 5 minutes because the filenames have no content hash, so after a deploy the old book.js
+    just has to age out.
     """
+
+    HELD = (".js", ".css", ".svg", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".webp", ".ico")
 
     async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Cache-Control"] = "max-age=300" if path.endswith(self.HELD) else "no-cache"
         return response
 
 
@@ -99,4 +103,4 @@ if get_settings().serve_frontend and FRONTEND_DIR.is_dir():
     def book_shell(step: str = "") -> FileResponse:
         return FileResponse(FRONTEND_DIR / "book.html", headers={"Cache-Control": "no-cache"})
 
-    app.mount("/", RevalidatingFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    app.mount("/", FrontendFiles(directory=FRONTEND_DIR, html=True), name="frontend")
