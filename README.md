@@ -8,7 +8,9 @@ Built to replace a contact form that produced leads the owner had to chase by ha
 
 **[Try it →](https://encore.tlong.dev)** · Square sandbox, no real cards are charged. Test card `4111 1111 1111 1111`, any future expiry, any CVV, any ZIP.
 
-<!-- Demo GIF goes here: <p align="center"><img src="docs/screens/demo.gif" width="330" alt="Booking a party on a phone, from date to confirmation"></p> -->
+<p align="center">
+  <img src="docs/screens/demo.gif" width="330" alt="Booking a party on a phone, from date to confirmation">
+</p>
 
 <p align="center">
   <img src="docs/screens/01-landing.png" width="330" alt="Landing page on a phone: hero, stats, and the booking entry point">
