@@ -29,7 +29,8 @@ from app.routes import (
 )
 
 # The console fallback for SMS logs at INFO; uvicorn leaves application loggers at WARNING otherwise.
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+# LOG_LEVEL=WARNING on the deploy, where every INFO line is CloudWatch ingestion.
+logging.basicConfig(level=get_settings().log_level, format="%(levelname)s %(name)s: %(message)s")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 

@@ -169,3 +169,19 @@ def test_request_notification_failure_never_fails_the_request(
     response = client_from("203.0.113.160").post("/api/requests", json=request_body(next_weekday(), 17))
     assert response.status_code == 201, "the request is stored even when the owner text cannot be sent"
     assert _notifications(engine) == [("owner", "sms", "failed", response.json()["request_id"])]
+
+
+def test_requests_are_rate_limited_per_address(db: Session) -> None:
+    """Same gentle shape as the waitlist cap: a rolling hour per address. Each request texts the owner, so an
+    uncapped flood is a Twilio bill."""
+    flood = client_from("203.0.113.77")
+    codes = [
+        flood.post("/api/requests", json=request_body(next_weekday(7 + n), 300 + n)).status_code
+        for n in range(8)
+    ]
+    assert 429 in codes, "the flood is stopped"
+    assert codes[:5] == [201] * 5, "and the first five through were fine"
+
+    # A different address is unaffected by someone else's flood.
+    other = client_from("198.51.100.7").post("/api/requests", json=request_body(next_weekday(7), 400))
+    assert other.status_code == 201, other.text

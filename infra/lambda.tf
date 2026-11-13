@@ -81,6 +81,12 @@ resource "aws_lambda_function" "api" {
   memory_size      = var.lambda_memory_mb
   timeout          = var.lambda_timeout_s
 
+  # The hard cap on compute spend: no more than this many containers exist at once, whatever the request
+  # rate. Not 10: a cold page load is 11 to 12 parallel invocations and 10 is the number that produced
+  # 503s and blank pages. The kill switch (killswitch.tf) sets this to 0 when invocations spike; the
+  # restore_concurrency output is how it comes back.
+  reserved_concurrent_executions = 30
+
   environment {
     variables = merge(local.app_env, var.extra_env)
   }

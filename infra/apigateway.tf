@@ -41,6 +41,15 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = "$default"
   auto_deploy = true
+
+  # The first ceiling on compute spend. A cold page load is eleven or twelve parallel asset fetches, so
+  # the burst has to clear that with room for a second visitor; a sustained 20 a second is far beyond
+  # anything a party-booking funnel sees from real people. Excess is answered 429 by API Gateway and never
+  # reaches the Lambda.
+  default_route_settings {
+    throttling_rate_limit  = 20
+    throttling_burst_limit = 50
+  }
 }
 
 # Scoped to this API, unlike the function URL's grant to "*": only API Gateway may invoke the function,

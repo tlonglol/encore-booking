@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # The weekday-request door. Off: POST /api/requests answers 404, the way a door nobody can see
     # should answer. The table, the code and the admin list stay, so it reopens with one variable.
     requests_enabled: bool = False
+    # Root logger level. INFO locally so the console SMS fallback is visible; WARNING on the deploy, where
+    # every line is CloudWatch ingestion billed per byte.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     weekends_ahead: int = 8
     # How long before the party self-serve add-on additions close. The food has to be ordered, so this
     # is the owner's number to confirm before launch.

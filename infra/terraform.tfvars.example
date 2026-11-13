@@ -60,4 +60,4 @@ warmer_enabled = true
 
 # Business rules keep their app/config.py defaults on the deploy. Override one without a code change:
 # extra_env = { MIN_LEAD_DAYS = "3", WEEKEND_DEFAULT = "request" }
-extra_env = {}
+extra_env = { LOG_LEVEL = "WARNING" }

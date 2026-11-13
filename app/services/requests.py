@@ -16,6 +16,10 @@ LATEST_START = time(20, 0)
 HORIZON_DAYS = 366
 DUPLICATE_INDEXES = {"requests_one_new_per_phone_date", "requests_one_new_per_email_date"}
 
+# A request costs nothing to make and each one texts the owner, so the same shape as the waitlist cap: a
+# rolling hour per address. Five is more than one family on one phone network asks for in an hour.
+REQUESTS_PER_HOUR = 5
+
 
 class RequestNotAllowed(Exception):
     pass
@@ -23,6 +27,24 @@ class RequestNotAllowed(Exception):
 
 class DuplicateRequest(Exception):
     pass
+
+
+class TooManyRequests(Exception):
+    pass
+
+
+def _enforce_rate(db: Session, client_ip: str | None, per_hour: int) -> None:
+    if client_ip is None:
+        return
+    recent = db.execute(
+        text(
+            "SELECT count(*) FROM requests"
+            " WHERE client_ip = CAST(:ip AS inet) AND created_at > now() - interval '1 hour'"
+        ),
+        {"ip": client_ip},
+    ).scalar_one()
+    if recent >= per_hour:
+        raise TooManyRequests()
 
 
 @dataclass(frozen=True)
@@ -59,7 +81,12 @@ def _weekend_state(db: Session, day: date) -> tuple[bool, bool]:
 
 
 def create_request(
-    db: Session, data: RequestInput, today: date, min_lead_days: int, weekend_default: str
+    db: Session,
+    data: RequestInput,
+    today: date,
+    min_lead_days: int,
+    weekend_default: str,
+    per_hour: int = REQUESTS_PER_HOUR,
 ) -> PartyRequest:
     priced = quote(data.package, data.kids, data.addons)
     phone = normalize_phone(data.phone)
@@ -77,6 +104,7 @@ def create_request(
         booked, blocked = _weekend_state(db, data.local_date)
         if booked or blocked:
             raise RequestNotAllowed("That date isn't available.")
+    _enforce_rate(db, data.client_ip, per_hour)
 
     request = PartyRequest(
         local_date=data.local_date,

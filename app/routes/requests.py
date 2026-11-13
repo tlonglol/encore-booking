@@ -9,7 +9,13 @@ from app.notifications import notify_new_request
 from app.pricing import PACKAGES, PricingError
 from app.routes.holds import client_ip
 from app.schemas import RequestCreate, RequestOut
-from app.services.requests import DuplicateRequest, RequestInput, RequestNotAllowed, create_request
+from app.services.requests import (
+    DuplicateRequest,
+    RequestInput,
+    RequestNotAllowed,
+    TooManyRequests,
+    create_request,
+)
 from app.timeutil import format_clock, format_date, venue_today
 
 router = APIRouter()
@@ -55,6 +61,11 @@ def post_request(body: RequestCreate, request: Request, db: Session = Depends(ge
         raise HTTPException(
             status_code=409,
             detail="We already have a request for that date from this phone or email. We'll text you back soon.",
+        ) from error
+    except TooManyRequests as error:
+        raise HTTPException(
+            status_code=429,
+            detail="That's a lot of requests from this network. Give it a few minutes, or call (646) 203-8087.",
         ) from error
     notify_new_request(db, settings, created.id)
     return RequestOut(
